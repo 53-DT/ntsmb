@@ -1,0 +1,18 @@
+[package]
+name = "plx_smb"
+version = "0.0.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Direct SMB2/3 access for the native webOS media browser."
+publish = false
+
+[lib]
+name = "plx_smb"
+crate-type = ["rlib"]
+
+[dependencies]
+smb2 = { version = "=0.26.0", default-features = false, features = ["smol"] }
+smol = "2"
+
+[lints]
+workspace = true
