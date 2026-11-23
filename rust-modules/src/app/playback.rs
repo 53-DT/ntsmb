@@ -350,6 +350,19 @@ pub(crate) fn install_smb_playback(
     pa.set_external_playback(prepared.play, prepared.bridge);
 }
 
+/// Start a prepared SMB file through the ordinary Player page and the existing Feed engine.
+/// This is called on the main thread after prepare_smb_playback completed on a worker.
+pub(crate) fn start_prepared_smb_playback(
+    ps: &mut plx_media::route::PlaybackSession,
+    pa: &mut plx_media::player::adapter::PlayerAdapter,
+    prepared: PreparedSmbPlayback,
+    pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>,
+    bridge: &mut super::bridge::Bridge,
+) -> bool {
+    install_smb_playback(pa, prepared);
+    start_playback(ps, pa, 0, Origin::Here, HUD_LINGER_MS, None, pages, bridge)
+}
+
 /// The ONE start-playback ritual (detail OK, home episode OK, and the plxnative-autoplay/
 /// -detailplay/-play dev triggers all share it): arm the resume point BEFORE the first
 /// Load (direct-play av_seek / transcode &offset restart), start the engine, record the
