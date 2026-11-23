@@ -18,6 +18,8 @@ default = []
 # Forwarded from the application crate, which is the only one that sets them. Each is named here
 # only because some code in this crate has a `cfg` on it.
 devtriggers = []
+# A single, isolated SMB playback smoke-test file; not the general developer-trigger surface.
+smb-smoke = []
 threadcheck = []
 lab-diagnostics = []
 sim = []
