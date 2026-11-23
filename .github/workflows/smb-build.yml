@@ -1,0 +1,35 @@
+name: SMB development build
+
+on:
+  push:
+    branches: [smb-development]
+    paths:
+      - ".github/workflows/smb-build.yml"
+      - "Makefile"
+      - "pkg/**"
+      - "ipkroot/**"
+      - "rust-modules/**"
+      - "ci/**"
+      - "vendor/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smb-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-package.yml
+    with:
+      ref: ${{ github.sha }}
+      flavor: debug
+      telemetry: none
+      artifact: smb-webos-debug-ipk
+      source-asset: false
+      caches: true
+      fwcompat: true
+      upload-debug-files: false
+      sentry-release: false
