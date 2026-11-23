@@ -43,6 +43,8 @@ feed-sink = []
 uri-transport = []
 devtools = ["plxnative-modules/devtools"]
 devtriggers = ["plxnative-modules/devtriggers"]
+# The isolated one-file SMB smoke trigger; does not enable devtriggers.
+smb-smoke = ["plxnative-modules/smb-smoke"]
 threadcheck = ["plxnative-modules/threadcheck"]
 lab-diagnostics = ["plxnative-modules/lab-diagnostics"]
 # The host test pass the Makefile runs under `--features sim` (its `HOSTSIM_SUITE`): this crate's
