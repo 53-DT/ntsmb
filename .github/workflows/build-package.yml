@@ -237,6 +237,8 @@ jobs:
         env:
           WEBOS_SDK: ${{ steps.ndk.outputs.sdk-dir }}
           TELEMETRY: ${{ inputs.telemetry }}
+          # Only the dedicated SMB debug workflow enables this; it does not enable the general devtriggers feature.
+          SMB_SMOKE: ${{ inputs.smb-smoke && '1' || '' }}
           # FinNative: compiled into the Jellyfin layer (`option_env!`), absent when the secret is.
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           # Drops the `devtools` cargo feature — no on-screen counter in a public build.
@@ -497,8 +499,6 @@ jobs:
           SENTRY_ORG: ${{ vars.SENTRY_ORG || 'gleb-linnik' }}
           SENTRY_PROJECT: ${{ inputs.telemetry == 'production' && (vars.SENTRY_PROJECT || 'plx-native') || (vars.SENTRY_PROJECT_DEV || 'plx-native-dev') }}
           TELEMETRY: ${{ inputs.telemetry }}
-          # Only the dedicated SMB debug workflow enables this; it does not enable the general devtriggers feature.
-          SMB_SMOKE: ${{ inputs.smb-smoke && '1' || '' }}
         run: |
           set -euo pipefail
           nightly_label=$(python3 ci/check-package.py --print-nightly-label pkg/.build-config)
