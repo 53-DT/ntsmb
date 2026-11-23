@@ -1,7 +1,8 @@
 # SMB playback smoke test
 
 This is a temporary, development-only test of the SMB-to-native-player handoff. It is not the
-SMB browser UI and it is not compiled into release builds.
+SMB browser UI. It is enabled only by the isolated `smb-smoke` feature in the debug test package;
+it does not enable the general `devtriggers` surface and is not included in release builds.
 
 ## Trigger
 
