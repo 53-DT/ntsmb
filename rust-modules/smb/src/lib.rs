@@ -6,6 +6,7 @@
 //! protocol details never enter playback URLs. The bridge supports bounded and open-ended
 //! byte ranges, allowing the existing FFmpeg demuxer to seek without staging a local copy.
 
+#[cfg(feature = "playback")]
 pub mod playback;
 pub mod range_http;
 
