@@ -401,9 +401,13 @@ pub struct SourceProbe {
     pub dovi: Option<(u8, u8, bool)>,
 }
 
-/// Probe a URL using the bundled FFmpeg demuxers. The SMB browser supplies a loopback HTTP Range
-/// URL, so FFmpeg reads only the container metadata it needs through the SMB bridge.
+/// Probe a loopback URL using the bundled FFmpeg demuxers. The SMB browser supplies only the
+/// local HTTP Range URL created by RangeServer, so this FFmpeg-owned HTTP request never reaches a
+/// remote host and reads only the container metadata needed through the SMB bridge.
 pub fn probe_url(url: &str) -> Result<SourceProbe, String> {
+    if !url.starts_with("http://127.0.0.1:") {
+        return Err("Media probing is restricted to the local SMB playback bridge".into());
+    }
     ensure_registered();
     let url = CString::new(url).map_err(|_| "Invalid probe URL".to_string())?;
     unsafe {
