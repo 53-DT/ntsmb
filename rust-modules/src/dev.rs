@@ -11,11 +11,11 @@
 //! the app a whole additional server — an address AND the token to trust it with (see [`servers`])
 //! — and `plxnative-url` replaces the stream the player feeds.
 //!
-//! So every read goes through [`plx_base::devtrig`] — the primitives (`flag`, `read`, `latched_flag!`,
-//! `read_sample`, `no_wan`, …), a base-layer module no application type can leak into — and that
-//! door is `#[cfg]`-gated on the `devtriggers` feature. In a `--no-default-features` build
-//! `devtrig::flag` is `false` and `devtrig::read` is `None` at COMPILE time, so no trigger can be
-//! armed. Storage and diagnostics still use runtime files; none are developer triggers. THIS
+//! So every read goes through [`plx_base::devtrig`] — the broad primitives (`flag`, `read`,
+//! `latched_flag!`, `read_sample`, `no_wan`, …) are gated on `devtriggers`. The only narrow
+//! exception is the one-file SMB playback smoke reader, `read_smb_smoke`, gated separately by
+//! `smb-smoke`; it cannot arm any of the other developer triggers. Storage and diagnostics still
+//! use runtime files; none are developer triggers. THIS
 //! module is the application-layer half: the typed triggers only app code consumes, the directory
 //! scans ([`any_trigger_present`], [`armed_triggers`]) and the one-shot boot instruments.
 //!
