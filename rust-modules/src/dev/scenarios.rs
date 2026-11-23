@@ -1224,7 +1224,9 @@ mod autoplay_arm_due_tests {
 struct SmbPlayTrigger {
     host: String,
     share: String,
+    #[serde(default)]
     username: String,
+    #[serde(default)]
     password: String,
     path: String,
 }
