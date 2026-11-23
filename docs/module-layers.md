@@ -94,7 +94,7 @@ That component looked like one tangle but came from a short list of misplaced it
 
 ## The target graph
 
-Fourteen layers, each a future crate. Each row lists what the layer may name (its `uses` in the
+The layers below are separate crates. Each row lists what the layer may name (its `uses` in the
 config). The config lists every layer explicitly, because Cargo dependencies are not transitive.
 There are two stacks, graphics (`gfx` → `ui`) and data (`net` → `plex` → `telemetry` → `data`/
 `session` → `media`). They meet in `appkit`, the application widgets several screens share, and
@@ -104,7 +104,7 @@ in `screens` above it; `media` also draws through `gfx`.
 app        everything below
 screens    appkit  ui  media  session  data  telemetry  plex  net  gfx    + os machine base
 appkit         ui  media  session  data  telemetry  plex  net  gfx        + os machine base
-media          data  telemetry  plex  net  gfx  playback_contract  media_codecs  + os machine base
+media          data  telemetry  plex  net  gfx  playback_contract  media_codecs  smb  + os machine base
 session        telemetry  plex  net                                       + os machine base
 data           telemetry  plex  net  playback_contract                    + os machine base
 ui             gfx                                                        + os machine base
@@ -114,6 +114,7 @@ net                                                                       + os b
 gfx                                                                       + os machine base
 shell_sdl                                                                 + os machine base
 play_feed      net  playback_contract  media_codecs                       + os base
+smb            playback_contract  play_feed                                 + base
 play_uri       playback_contract                                          + os base
 media_codecs   playback_contract                                          + base
 playback_contract                                                         + base
