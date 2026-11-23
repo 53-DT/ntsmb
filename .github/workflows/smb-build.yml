@@ -28,7 +28,7 @@ jobs:
       flavor: debug
       telemetry: none
       artifact: smb-webos-debug-ipk
-      source-asset: false
+      source-asset: true
       caches: true
       fwcompat: true
       upload-debug-files: false
