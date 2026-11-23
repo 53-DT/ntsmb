@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - "rust-modules/Cargo.toml"
-      - "rust-modules/Cargo.lock"
       - "rust-modules/**/Cargo.toml"
       - ".github/workflows/resolve-smb-lock.yml"
 
