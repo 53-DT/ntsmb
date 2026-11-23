@@ -84,7 +84,7 @@ impl Session {
     }
 
     /// Disconnect a share cleanly. Call after readers have been closed.
-    pub async fn disconnect(self) -> Result<(), String> {
+    pub async fn disconnect(mut self) -> Result<(), String> {
         self.client
             .disconnect_share(&self.share)
             .await
