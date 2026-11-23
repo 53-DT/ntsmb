@@ -86,6 +86,16 @@ impl Session {
             .map_err(|e| format!("Could not open SMB file: {e}"))
     }
 
+    /// Blocking worker-thread convenience; never call from the render/frame thread.
+    pub fn list_directory_blocking(&mut self, path: &str) -> Result<Vec<Entry>, String> {
+        smol::block_on(self.list_directory(path))
+    }
+
+    /// Blocking worker-thread convenience; never call from the render/frame thread.
+    pub fn open_file_blocking(&mut self, path: &str) -> Result<FileReader, String> {
+        smol::block_on(self.open_file(path))
+    }
+
     /// Disconnect a share cleanly. Call after readers have been closed.
     pub async fn disconnect(mut self) -> Result<(), String> {
         self.client
