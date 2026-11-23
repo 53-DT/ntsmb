@@ -32,6 +32,16 @@ pub struct RangeServer {
 impl RangeServer {
     /// Start serving the already-open SMB reader on an ephemeral loopback port.
     pub fn start(reader: FileReader) -> Result<Self, String> {
+        Self::start_inner(reader, None)
+    }
+
+    /// Start serving a reader and retain its authenticated SMB session until playback stops.
+    /// The share is disconnected only after active HTTP handlers and the file reader are closed.
+    pub fn start_with_session(reader: FileReader, session: crate::Session) -> Result<Self, String> {
+        Self::start_inner(reader, Some(session))
+    }
+
+    fn start_inner(reader: FileReader, session: Option<crate::Session>) -> Result<Self, String> {
         let token = random_token()?;
         let size = reader.size();
         let reader = Arc::new(reader);
@@ -50,7 +60,7 @@ impl RangeServer {
 
         let thread = thread::Builder::new()
             .name("smb-range-http".into())
-            .spawn(move || serve(listener, address, token, size, reader, thread_stop))
+            .spawn(move || serve(listener, address, token, size, reader, session, thread_stop))
             .map_err(|e| format!("Could not start local playback worker: {e}"))?;
 
         Ok(Self {
@@ -93,6 +103,7 @@ fn serve(
     token: String,
     size: u64,
     reader: Arc<FileReader>,
+    session: Option<crate::Session>,
     stop: Arc<AtomicBool>,
 ) {
     let mut handlers: Vec<JoinHandle<()>> = Vec::new();
@@ -127,6 +138,9 @@ fn serve(
 
     if let Ok(reader) = Arc::try_unwrap(reader) {
         let _ = smol::block_on(reader.close());
+    }
+    if let Some(session) = session {
+        let _ = session.disconnect_blocking();
     }
 }
 
