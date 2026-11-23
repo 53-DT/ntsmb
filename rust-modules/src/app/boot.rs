@@ -1625,7 +1625,7 @@ pub(crate) unsafe fn construct(
             shots: Default::default(),
             auto_tried,
             playurl_armed: None,
-            #[cfg(feature = "devtriggers")]
+            #[cfg(feature = "smb-smoke")]
             smb_worker: None,
             replay_left,
             grid_tried,
