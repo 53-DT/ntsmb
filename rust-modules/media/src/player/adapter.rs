@@ -490,6 +490,8 @@ pub struct PlayerAdapter {
     start_hooks: Option<StartHooks>,
     /// One-shot app-supplied URL declaration (SMB/local browser); route URL takes over after resolve.
     external_play_url: std::sync::Mutex<Option<plx_playback_contract::playurl::PlayUrl>>,
+    /// Loopback SMB transport kept alive for the current direct-file playback.
+    range_server: Option<plx_smb::range_http::RangeServer>,
     /// The test fixtures' handle on the Feed set boxed behind `physical`
     /// ([`Self::new_probed`]); `None` on an adapter built by [`Self::new`].
     #[cfg(test)]
@@ -584,6 +586,7 @@ impl PlayerAdapter {
             sink: inert_sink,
             start_hooks: None,
             external_play_url: std::sync::Mutex::new(None),
+            range_server: None,
             #[cfg(test)]
             probe: None,
             backend: backend::BackendRunner::new(),
@@ -1157,8 +1160,13 @@ impl PlayerAdapter {
     /// [`plx_playback_contract::playurl`]); `None` with no Feed composition installed.
     /// Queue one direct URL plus its probed Load declaration for the next route start.
     /// The player consumes it once; the route then owns the URL for seeks and reloads.
-    pub fn set_external_play_url(&mut self, play: plx_playback_contract::playurl::PlayUrl) {
+    pub fn set_external_playback(
+        &mut self,
+        play: plx_playback_contract::playurl::PlayUrl,
+        range_server: plx_smb::range_http::RangeServer,
+    ) {
         *self.external_play_url.get_mut().unwrap_or_else(|p| p.into_inner()) = Some(play);
+        self.range_server = Some(range_server);
     }
 
     pub(super) fn play_url(&self) -> Option<Result<plx_playback_contract::playurl::PlayUrl, String>> {
@@ -1943,6 +1951,10 @@ impl PlayerAdapter {
         if let Some(plx_playback_contract::feed::ReleaseHandoff { epoch, at }) = handoff {
             self.release_step(ps, &super::release::ReleaseEvent::UnloadHandedOff { epoch, at },
                 &mut Vec::new());
+        }
+        if !for_reload {
+            // RangeServer's Drop signals and detaches; it never joins on the frame thread.
+            self.range_server.take();
         }
     }
 
