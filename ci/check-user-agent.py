@@ -35,8 +35,10 @@ stream's) than it calls `user_agent_header_line`. A C file may not open a curl h
 helper to apply the value with, so a request belongs in `plx_net`. This is a count, not a proof that the
 call is on the path every request takes; the wire tests (`net_user_agent_tests.rs`,
 `stream_user_agent_tests.rs`, `curlio_redirect_tests.rs`) are what prove the value reaches the socket.
-A libavformat open of a URL (its own HTTP, its own name) is not visible to this gate; the only one is the
-devtriggers-only `ffprobe` probe in `play-feed/src/ff.rs`.
+A libavformat open of a URL (its own HTTP, its own name) is not visible to this gate. The dev-only
+`ffprobe` diagnostic is one such use; the production SMB source probe is the other, and its public
+entry point rejects every URL except the 127.0.0.1 RangeServer bridge. Neither path opens a remote
+media URL through FFmpeg's private HTTP client.
 
     ci/check-user-agent.py            # the gate (check-python-steps.txt runs it)
 """
