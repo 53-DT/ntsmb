@@ -18,6 +18,8 @@ crate-type = ["rlib"]
 # parallel one. `alt-backend` gives it the `Backend` trait the `Client` methods hand their calls
 # to; a build that does not link this crate (PlxNative) never turns it on.
 plx_plex = { path = "../plex", features = ["alt-backend"] }
+# Direct SMB2/3 access, independent of any media server.
+plx_smb = { path = "../smb" }
 # `task::OffFrame`, the worker token the live-update feed (`Backend::notifications`) runs under.
 plx_base = { path = "../base" }
 # `present::wake_from_worker`, so a favourite write's answer from the server is drawn at once.
