@@ -2,8 +2,9 @@
 //!
 //! This layer deliberately knows nothing about Plex, Jellyfin, artwork, metadata providers or
 //! transcoding. It connects to one SMB share, lists a directory and opens random-access file
-//! readers. The player-facing HTTP range bridge is a separate layer so SMB credentials and
-//! protocol details never enter playback URLs.
+//! readers. The player-facing HTTP Range bridge is a separate layer so SMB credentials and
+//! protocol details never enter playback URLs. The bridge supports bounded and open-ended
+//! byte ranges, allowing the existing FFmpeg demuxer to seek without staging a local copy.
 
 pub mod range_http;
 
