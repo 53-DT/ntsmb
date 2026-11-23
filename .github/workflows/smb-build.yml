@@ -1,5 +1,7 @@
 name: SMB development build
 
+# Builds the current development branch into a separately installable debug IPK for TV testing.
+
 on:
   push:
     branches: [smb-development]
