@@ -1,3 +1,4 @@
+pub use plx_smb as smb;
 //! plx_media: the media layer of the PlxNative application core.
 //!
 //! The media credential facade (`curlio` over
