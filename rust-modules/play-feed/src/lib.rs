@@ -23,6 +23,7 @@ pub mod ff_pcm;
 mod ff;
 pub use ff::{boot, demux, publish_audio_converter, pushed_any, set_convert_audio, set_feed_audio, set_pcm_out, DemuxTransport};
 pub use ff::native_audio;
+pub use ff::{probe_url, SourceProbe};
 
 /// Physical mechanisms exercised by media's integration fixtures. This module exports no raw
 /// callback state; the feed's process-lifetime owners are `shared::{FEED_SHARED, FEED_TX}`.
