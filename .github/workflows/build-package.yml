@@ -88,6 +88,10 @@ on:
           flag stays for a caller that wants the trade.
         type: boolean
         default: false
+      smb-smoke:
+        description: 'Enable the isolated SMB playback smoke trigger. Debug flavor only; never a release feature.'
+        type: boolean
+        default: false
       fwcompat:
         description: >
           Run the per-binary firmware-database compatibility check (tools/fwcompat.py) against
@@ -159,8 +163,11 @@ jobs:
         env:
           FLAVOR: ${{ inputs.flavor }}
           TELEMETRY: ${{ inputs.telemetry }}
+          # Only the dedicated SMB debug workflow enables this; it does not enable the general devtriggers feature.
+          SMB_SMOKE: ${{ inputs.smb-smoke && '1' || '' }}
           HOMEBREW_MANIFEST: ${{ inputs.homebrew-manifest }}
           RC: ${{ inputs.rc }}
+          SMB_SMOKE: ${{ inputs.smb-smoke }}
         run: |
           set -euo pipefail
           case "$FLAVOR" in
@@ -183,6 +190,10 @@ jobs:
           # A candidate is never listed in the Homebrew Channel: the Channel resolves the manifest
           # through `releases/latest`, which a prerelease never is, and a candidate's manifest
           # would carry the final version's number for a binary that is not the final.
+          if [ "$SMB_SMOKE" = true ] && [ "$FLAVOR" != debug ]; then
+            echo "::error::smb-smoke is a local TV test feature and is only allowed for flavor: debug"
+            exit 1
+          fi
           if [ -n "$RC" ]; then
             [ "$FLAVOR" = stable ] || { echo "::error::rc is a candidate of the stable id; flavor is '$FLAVOR'"; exit 1; }
             [ "$HOMEBREW_MANIFEST" != true ] || { echo "::error::a release candidate never gets a Homebrew Channel manifest"; exit 1; }
