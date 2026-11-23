@@ -92,6 +92,10 @@ on:
         description: 'Enable the isolated SMB playback smoke trigger. Debug flavor only; never a release feature.'
         type: boolean
         default: false
+      lgpl-ffmpeg-source:
+        description: 'Attach the pinned FFmpeg source archive and build script without running the full stable-release source reconstruction.'
+        type: boolean
+        default: false
       fwcompat:
         description: >
           Run the per-binary firmware-database compatibility check (tools/fwcompat.py) against
@@ -668,7 +672,7 @@ jobs:
         #
         # The tarball is the pristine upstream one build-ffmpeg.sh already downloaded and verified
         # against a pinned sha256 — no patches are applied, so this IS the corresponding source.
-        if: inputs.source-asset
+        if: inputs.source-asset || inputs.lgpl-ffmpeg-source
         run: |
           set -euo pipefail
           tarball=$(python3 ci/deps.py fetch ffmpeg)
