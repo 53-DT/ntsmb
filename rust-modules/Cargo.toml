@@ -117,6 +117,8 @@ devtriggers = [
     "plx_appkit/devtriggers",
     "plx_screens/devtriggers",
 ]
+# The one-file SMB playback smoke test; does not enable the general /tmp trigger surface.
+smb-smoke = ["plx_base/smb-smoke"]
 # The one deliberate behavioural difference of dev builds: make main-thread violations LOUDER
 # (abort/warning), never change a code path that succeeds. Dropped by --no-default-features.
 threadcheck = ["plx_base/threadcheck", "plx_ui/threadcheck"]
