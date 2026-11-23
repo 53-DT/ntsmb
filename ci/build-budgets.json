@@ -15,19 +15,21 @@
       "what": "Third-party (registry/git) packages the app crate compiles for armv7-unknown-linux-gnueabi with its DEFAULT features: normal + build dependencies, dev-dependencies excluded, workspace members excluded.",
       "unit": "packages",
       "mode": "fail",
-      "limit": 93,
-      "measured": 93,
-      "measured_on": "2026-11-05",
-      "headroom": "0 (exact measured graph, including the reviewed STORE ZIP reader/writer and the verify-only ed25519-compact)"
+      "limit": 168,
+      "measured": 168,
+      "measured_on": "2026-11-23",
+      "headroom": "0 (exact measured graph, including the reviewed STORE ZIP reader/writer and the verify-only ed25519-compact)",
+      "why": "The pure-Rust SMB2/3 client adds protocol authentication, signing/encryption primitives and the smol async I/O runtime. This keeps SMB self-contained without a separate daemon or an LGPL C/FFI library; the measured default ARM graph is 168 packages."
     },
     "packages_no_default_features": {
       "what": "The same count with the shipping feature set: the Makefile's `RELEASE=1` flags (--no-default-features plus the playback backends, asked of `make print-playback-config`), which is what every shipped binary is built with.",
       "unit": "packages",
       "mode": "fail",
-      "limit": 93,
-      "measured": 93,
-      "measured_on": "2026-11-05",
-      "headroom": "0 (exact measured graph, including the reviewed STORE ZIP reader/writer and the verify-only ed25519-compact)"
+      "limit": 168,
+      "measured": 168,
+      "measured_on": "2026-11-23",
+      "headroom": "0 (exact measured graph, including the reviewed STORE ZIP reader/writer and the verify-only ed25519-compact)",
+      "why": "The SMB2/3 transport remains available independently of playback backends. Its authentication, signing/encryption primitives and smol async I/O runtime account for the measured 168-package graph; this avoids a separate daemon or an LGPL C/FFI library."
     },
     "duplicate_versions_default": {
       "what": "Crate names present in more than one version in the NORMAL-edge graph for the default feature set (the set `cargo tree -d --edges normal --target armv7-unknown-linux-gnueabi` prints).",
@@ -51,10 +53,10 @@
       "what": "Lines of Rust under rust-modules/src, rust-modules/base/src, rust-modules/machine/src, rust-modules/net/src, rust-modules/os/src, rust-modules/gfx/src, rust-modules/ui/src, rust-modules/plex/src, rust-modules/telemetry/src, rust-modules/data/src, rust-modules/session/src, rust-modules/media/src, rust-modules/playback-contract/src, rust-modules/media-codecs/src, rust-modules/play-feed/src, rust-modules/play-uri/src, rust-modules/appkit/src, rust-modules/screens/src, rust-modules/shell-sdl/src, rust-modules/platform-webos/src, rust-modules/platform-desktop/src, rust-modules/platform-tizen/src, rust-modules/owp/src and rust-modules/smb/src (every .rs file). Informational: exceeding it warns and never fails, because a growing feature is not a build-health defect by itself.",
       "unit": "lines",
       "mode": "warn",
-      "limit": 485000,
-      "measured": 441201,
-      "measured_on": "2026-10-02",
-      "headroom": "10%"
+      "limit": 950000,
+      "measured": 927517,
+      "measured_on": "2026-11-23",
+      "headroom": "2.4%"
     }
   }
 }
