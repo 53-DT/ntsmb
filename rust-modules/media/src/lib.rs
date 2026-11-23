@@ -1,4 +1,3 @@
-pub use plx_smb as smb;
 //! plx_media: the media layer of the PlxNative application core.
 //!
 //! The media credential facade (`curlio` over
@@ -18,6 +17,8 @@ pub use plx_smb as smb;
 //! `test-support` exposes the `cfg(test)` seams the layers above test through (`player::preview`,
 //! `player::restore_state_for_test`, ...). The application crate enables it in `[dev-dependencies]`
 //! only, so no shipped build sees it.
+
+pub use plx_smb as smb;
 
 pub mod abr; // client-managed fixed-session HLS controller: estimate, propose, prime, then commit
 pub(crate) mod adaptive; // common adaptive policy and route transition; feed supplies physical media
