@@ -7,6 +7,7 @@ on:
     branches: [smb-development]
     paths:
       - ".github/workflows/smb-build.yml"
+      - ".github/workflows/build-package.yml"
       - "Makefile"
       - "pkg/**"
       - "ipkroot/**"
@@ -29,6 +30,7 @@ jobs:
       ref: ${{ github.sha }}
       flavor: debug
       telemetry: none
+      smb-smoke: true
       artifact: smb-webos-debug-ipk
       source-asset: true
       caches: true
