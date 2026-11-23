@@ -124,7 +124,7 @@ pub(crate) struct Scenarios {
     /// `/tmp/plxnative-playurl`, once the `autoplay` arm has asked (see `playurl_latched`).
     pub(crate) playurl_armed: Option<bool>,
     /// Pending worker result for the one-shot `/tmp/plxnative-smb` playback smoke test.
-    #[cfg(feature = "devtriggers")]
+    #[cfg(feature = "smb-smoke")]
     pub(crate) smb_worker: Option<std::sync::mpsc::Receiver<Result<plx_smb::playback::PreparedPlayback, String>>>,
     pub(crate) replay_left: u32,
     pub(crate) grid_tried: bool,
@@ -1219,7 +1219,7 @@ mod autoplay_arm_due_tests {
     }
 }
 
-#[cfg(feature = "devtriggers")]
+#[cfg(feature = "smb-smoke")]
 #[derive(serde::Deserialize)]
 struct SmbPlayTrigger {
     host: String,
@@ -1234,7 +1234,7 @@ struct SmbPlayTrigger {
 /// One-shot SMB transport smoke test. The share is opened and probed on a worker; only the
 /// prepared, credential-free loopback URL crosses back to the frame thread and enters the
 /// existing player start ritual. The trigger is compiled out of release builds.
-#[cfg(feature = "devtriggers")]
+#[cfg(feature = "smb-smoke")]
 fn smb_playback_arm(app: &mut App, fr: &mut Frame) -> bool {
     use plx_screens::player::input::HUD_HEADLESS_MS;
     use std::sync::mpsc::{self, TryRecvError};
@@ -1244,7 +1244,7 @@ fn smb_playback_arm(app: &mut App, fr: &mut Frame) -> bool {
         && fr.now.wrapping_sub(app.t0) > 2000
         && app.route() != AppArg::Player
     {
-        if let Some(raw) = plx_base::devtrig::read("smb") {
+        if let Some(raw) = plx_base::devtrig::read_smb_smoke() {
             app.scenarios.auto_tried = true;
             let request = match serde_json::from_str::<SmbPlayTrigger>(&raw) {
                 Ok(request) => request,
@@ -1321,7 +1321,7 @@ fn smb_playback_arm(app: &mut App, fr: &mut Frame) -> bool {
 }
 
 fn autoplay_arm(app: &mut App, fr: &mut Frame) {
-    #[cfg(feature = "devtriggers")]
+    #[cfg(feature = "smb-smoke")]
     if smb_playback_arm(app, fr) { return; }
     use plx_screens::player::input::HUD_HEADLESS_MS;
     let route = app.route();
