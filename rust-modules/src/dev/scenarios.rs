@@ -123,6 +123,9 @@ pub(crate) struct Scenarios {
     pub(crate) auto_tried: bool,
     /// `/tmp/plxnative-playurl`, once the `autoplay` arm has asked (see `playurl_latched`).
     pub(crate) playurl_armed: Option<bool>,
+    /// Pending worker result for the one-shot `/tmp/plxnative-smb` playback smoke test.
+    #[cfg(feature = "devtriggers")]
+    pub(crate) smb_worker: Option<std::sync::mpsc::Receiver<Result<plx_smb::playback::PreparedPlayback, String>>>,
     pub(crate) replay_left: u32,
     pub(crate) grid_tried: bool,
     pub(crate) settings_tried: bool,
@@ -1216,7 +1219,108 @@ mod autoplay_arm_due_tests {
     }
 }
 
+#[cfg(feature = "devtriggers")]
+#[derive(serde::Deserialize)]
+struct SmbPlayTrigger {
+    host: String,
+    share: String,
+    username: String,
+    password: String,
+    path: String,
+}
+
+/// One-shot SMB transport smoke test. The share is opened and probed on a worker; only the
+/// prepared, credential-free loopback URL crosses back to the frame thread and enters the
+/// existing player start ritual. The trigger is compiled out of release builds.
+#[cfg(feature = "devtriggers")]
+fn smb_playback_arm(app: &mut App, fr: &mut Frame) -> bool {
+    use plx_screens::player::input::HUD_HEADLESS_MS;
+    use std::sync::mpsc::{self, TryRecvError};
+
+    if app.scenarios.smb_worker.is_none()
+        && !app.scenarios.auto_tried
+        && fr.now.wrapping_sub(app.t0) > 2000
+        && app.route() != AppArg::Player
+    {
+        if let Some(raw) = plx_base::devtrig::read("smb") {
+            app.scenarios.auto_tried = true;
+            let request = match serde_json::from_str::<SmbPlayTrigger>(&raw) {
+                Ok(request) => request,
+                Err(_) => {
+                    plx_base::eventlog::log("smb: invalid smoke-test configuration JSON");
+                    return true;
+                }
+            };
+            let (tx, rx) = mpsc::channel();
+            let spawned = std::thread::Builder::new()
+                .name("smb-prepare".into())
+                .spawn(move || {
+                    let result = (|| {
+                        let session = plx_smb::connect_blocking(
+                            &request.host,
+                            &request.username,
+                            &request.password,
+                            &request.share,
+                        )?;
+                        plx_smb::playback::prepare_playback(session, &request.path)
+                    })();
+                    let _ = tx.send(result);
+                });
+            match spawned {
+                Ok(_) => {
+                    app.scenarios.smb_worker = Some(rx);
+                    plx_base::eventlog::log("smb: connecting and probing the configured file");
+                }
+                Err(_) => {
+                    plx_base::eventlog::log("smb: could not start the preparation worker");
+                }
+            }
+            return true;
+        }
+    }
+
+    let result = app.scenarios.smb_worker.as_ref().map(|rx| rx.try_recv());
+    match result {
+        Some(Ok(Ok(prepared))) => {
+            app.scenarios.smb_worker = None;
+            app.adapters.player.set_external_playback(prepared.play, prepared.bridge);
+            plx_media::route::clear_url(&mut app.player.session);
+            let started = crate::app::playback::start_playback(
+                &mut app.player.session,
+                &mut app.adapters.player,
+                0,
+                crate::app::playback::Origin::Here,
+                HUD_HEADLESS_MS,
+                None,
+                &mut app.pages,
+                &mut app.runtime.bridge(&mut app.bridge),
+            );
+            if started {
+                plx_base::eventlog::log("smb: handing the prepared file to the native player");
+            } else {
+                app.adapters.player.clear_external_playback();
+                plx_base::eventlog::log("smb: the native player refused the prepared file");
+            }
+            true
+        }
+        Some(Ok(Err(_))) => {
+            app.scenarios.smb_worker = None;
+            plx_base::eventlog::log("smb: connection, open or FFmpeg probe failed");
+            true
+        }
+        Some(Err(TryRecvError::Empty)) => true,
+        Some(Err(TryRecvError::Disconnected)) => {
+            app.scenarios.smb_worker = None;
+            plx_base::eventlog::log("smb: preparation worker exited without a result");
+            true
+        }
+        None => false,
+    }
+}
+
 fn autoplay_arm(app: &mut App, fr: &mut Frame) {
+    #[cfg(feature = "devtriggers")]
+    if smb_playback_arm(app, fr) { return; }
     use plx_screens::player::input::HUD_HEADLESS_MS;
     let route = app.route();
     let (auto_tried, elapsed) = (app.scenarios.auto_tried, fr.now.wrapping_sub(app.t0));
