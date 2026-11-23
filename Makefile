@@ -640,9 +640,15 @@ PLAYBACK_HAS_FEED = $(filter both feed,$(PLAYBACK_BACKENDS))
 PLAYBACK_EMPTY :=
 PLAYBACK_SPACE := $(PLAYBACK_EMPTY) $(PLAYBACK_EMPTY)
 PLAYBACK_COMMA := ,
-RUST_BUILD_FEATURES = $(subst $(PLAYBACK_SPACE),$(PLAYBACK_COMMA),$(strip $(subst $(PLAYBACK_COMMA),$(PLAYBACK_SPACE),$(RUST_BACKEND_FEATURES)) $(if $(RELEASE),,devtools devtriggers threadcheck) $(if $(LAB),lab-diagnostics,)))
+# SMB_SMOKE is a single-purpose debug test feature; it does not enable devtriggers.
+ifneq ($(filter 1,$(SMB_SMOKE)),)
+ifneq ($(FLAVOR),debug)
+$(error SMB_SMOKE=1 is only allowed with FLAVOR=debug)
+endif
+endif
+RUST_BUILD_FEATURES = $(subst $(PLAYBACK_SPACE),$(PLAYBACK_COMMA),$(strip $(subst $(PLAYBACK_COMMA),$(PLAYBACK_SPACE),$(RUST_BACKEND_FEATURES)) $(if $(RELEASE),,devtools devtriggers threadcheck) $(if $(filter 1,$(SMB_SMOKE)),smb-smoke,) $(if $(LAB),lab-diagnostics,)))
 RUST_FEATFLAGS = --no-default-features $(if $(RUST_BUILD_FEATURES),--features $(RUST_BUILD_FEATURES),)
-RUST_TDIR = target$(if $(RELEASE),-release,)$(if $(LAB),-lab,)$(if $(SYMBOLS),-sym,)$(if $(filter both,$(PLAYBACK_BACKENDS)),,-$(PLAYBACK_BACKENDS))
+RUST_TDIR = target$(if $(RELEASE),-release,)$(if $(filter 1,$(SMB_SMOKE)),-smb-smoke,)$(if $(LAB),-lab,)$(if $(SYMBOLS),-sym,)$(if $(filter both,$(PLAYBACK_BACKENDS)),,-$(PLAYBACK_BACKENDS))
 
 # OVERRIDING RUST_FEATFLAGS BY HAND? PASS RUST_TDIR TOO. This dir is keyed on RELEASE, not on the
 # flag set, so `make RUST_FEATFLAGS=...` alone lands in the SAME target/ as an ordinary build:
