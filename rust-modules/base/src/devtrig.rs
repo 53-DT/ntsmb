@@ -318,8 +318,9 @@ pub fn read_sample(_name: &str) -> Option<Vec<u8>> {
     None
 }
 
-/// `true` when this build reads `/tmp` at all — for the one boot log line that says so, and for
-/// call sites gating a whole subsystem (the capture listener, the remote FIFO) rather than a read.
+/// `true` when the GENERAL developer-trigger surface is enabled — for its boot log line and the
+/// call sites gating whole subsystems (the capture listener, the remote FIFO). The isolated
+/// `smb-smoke` reader deliberately does not enable those surfaces.
 pub const ENABLED: bool = cfg!(feature = "devtriggers");
 
 /// The trigger's absolute path. `/tmp/plxnative-<name>` on the television; see
@@ -329,8 +330,8 @@ pub const ENABLED: bool = cfg!(feature = "devtriggers");
 /// through this door rather than through a literal, and it guards itself at RUNTIME on
 /// [`ENABLED`] — but a runtime guard cannot stop a call from being compiled, so without this the
 /// whole crate failed to build under `--no-default-features --test` (E0425, "cannot find function
-/// `path` in module `super`"). A shipping release build is unchanged: `cfg(test)` is false there,
-/// and the fn is gone exactly as before.
+/// `path` in module `super`"). A normal shipping build enables neither `devtriggers` nor
+/// `smb-smoke`, so the fn is gone exactly as before.
 ///
 /// `pub(crate)` so `dev::scenarios`, which hands a trigger's PATH (not its content) to the
 /// recorder's own parser, goes through the same door instead of re-spelling the prefix. The
