@@ -5,5 +5,3 @@
 
 pub mod jellyfin;
 
-/// Direct SMB2/3 share access used by the native SMB browser.
-pub use plx_smb as smb;
