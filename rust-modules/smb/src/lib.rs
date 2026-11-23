@@ -5,6 +5,8 @@
 //! readers. The player-facing HTTP range bridge is a separate layer so SMB credentials and
 //! protocol details never enter playback URLs.
 
+pub mod range_http;
+
 use smb2::{FileReader, SmbClient, Tree};
 
 /// One directory row returned by an SMB server.
