@@ -42,6 +42,9 @@ src/config.local.h
 tests/manifest.local.json
 rust-modules/target/
 rust-modules/target-release/
+# Dedicated one-file SMB smoke build (never the general devtriggers surface).
+rust-modules/target-release-smb-smoke/
+rust-modules/target-release-smb-smoke-sym/
 rust-modules/target-sim/
 rust-modules/target-macapp/
 # `make test-fast` — the opt-in INCREMENTAL host unit loop, in its own tree so its incremental
