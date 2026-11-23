@@ -6,6 +6,7 @@ on:
   push:
     branches: [smb-development]
     paths:
+      - ".gitignore"
       - ".github/workflows/smb-build.yml"
       - ".github/workflows/build-package.yml"
       - "Makefile"
