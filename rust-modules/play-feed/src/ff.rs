@@ -388,6 +388,97 @@ mod boot_tests {
     }
 }
 
+/// The codec and raster facts needed to build the native Load declaration for a direct URL.
+/// This is a lightweight container probe; it does not decode frames or download the whole file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceProbe {
+    pub video_codec: Option<String>,
+    pub audio_codec: Option<String>,
+    pub width: u16,
+    pub height: u16,
+    pub duration_ns: u64,
+    /// Dolby Vision profile, BL compatibility id and EL-present flag.
+    pub dovi: Option<(u8, u8, bool)>,
+}
+
+/// Probe a URL using the bundled FFmpeg demuxers. The SMB browser supplies a loopback HTTP Range
+/// URL, so FFmpeg reads only the container metadata it needs through the SMB bridge.
+pub fn probe_url(url: &str) -> Result<SourceProbe, String> {
+    ensure_registered();
+    let url = CString::new(url).map_err(|_| "Invalid probe URL".to_string())?;
+    unsafe {
+        let mut fmt: *mut AVFormatContext = std::ptr::null_mut();
+        let opened = avformat_open_input(
+            &mut fmt,
+            url.as_ptr(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
+        if opened < 0 || fmt.is_null() {
+            if !fmt.is_null() {
+                avformat_close_input(&mut fmt);
+            }
+            return Err(format!("FFmpeg could not open the media source ({opened})"));
+        }
+
+        let discovered = avformat_find_stream_info(fmt, std::ptr::null_mut());
+        if discovered < 0 {
+            avformat_close_input(&mut fmt);
+            return Err(format!("FFmpeg could not inspect the media streams ({discovered})"));
+        }
+
+        let mut video_codec = None;
+        let mut audio_codec = None;
+        let mut width = 0u16;
+        let mut height = 0u16;
+        let mut dovi = None;
+        let streams = (*fmt).streams;
+
+        for index in 0..(*fmt).nb_streams as usize {
+            let stream = *streams.add(index);
+            let params = stream_codecpar(stream);
+            match (*params).codec_type {
+                AVMEDIA_TYPE_VIDEO if video_codec.is_none() => {
+                    video_codec = Some(
+                        std::ffi::CStr::from_ptr(avcodec_get_name((*params).codec_id))
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
+                    width = u16::try_from((*params).width).unwrap_or(0);
+                    height = u16::try_from((*params).height).unwrap_or(0);
+                    dovi = dovi_conf(params).map(|dv| {
+                        (dv.dv_profile, dv.dv_bl_signal_compatibility_id, dv.el_present_flag != 0)
+                    });
+                }
+                AVMEDIA_TYPE_AUDIO if audio_codec.is_none() => {
+                    audio_codec = Some(
+                        std::ffi::CStr::from_ptr(avcodec_get_name((*params).codec_id))
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        let duration_us = fmt_duration(fmt);
+        avformat_close_input(&mut fmt);
+
+        if video_codec.is_none() {
+            return Err("The selected file has no video stream".into());
+        }
+
+        Ok(SourceProbe {
+            video_codec,
+            audio_codec,
+            width,
+            height,
+            duration_ns: u64::try_from(duration_us.max(0)).unwrap_or(0).saturating_mul(1_000),
+            dovi,
+        })
+    }
+}
+
 /// Open `url` via libavformat, find streams, and log codec_id/dims/time_base for each —
 /// the on-device confirmation that the FFI struct layout is correct. Uses libavformat's
 /// own HTTP for the probe (the demuxer proper will use a custom AVIO over stream.rs), so that one
