@@ -1353,7 +1353,6 @@ dependencies = [
  "plx_net",
  "plx_os",
  "plx_plex",
- "plx_smb",
  "qrcodegen",
  "serde",
  "serde_json",
@@ -1574,6 +1573,8 @@ dependencies = [
 name = "plx_smb"
 version = "0.0.0"
 dependencies = [
+ "plx_play_feed",
+ "plx_playback_contract",
  "smb2",
  "smol",
 ]
