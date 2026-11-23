@@ -5,10 +5,12 @@
 //! and route selection (`route`). The HLS parser and access-unit queues live in `plx_play_feed`.
 //! It is the `media` layer of `ci/module-layers.ini`: it
 //! uses `playback-contract`, `media-codecs`, `base`, `machine`,
-//! `os`, `gfx`, `net`, `plex`, `telemetry` and `data`, and nothing above them. The remaining
+//! `os`, `gfx`, `net`, `plex`, `telemetry`, `data` and `smb`, and nothing above them. The remaining
 //! media orchestration members (`abr`, `curlio`, `player` and
 //! `route`) and the `ff` facade share a crate. The bundled FFmpeg binding, encoder and pure
-//! audio DSP live in `plx_media_codecs` below this layer.
+//! audio DSP live in `plx_media_codecs` below this layer. The direct SMB2/3 file source and its
+//! loopback HTTP Range bridge are re-exported from `smb`; the player adapter owns that bridge for
+//! the duration of playback.
 //!
 //! Starfish calls back into the Feed backend through `sf_on_event` (`plx_play_feed::sf_event`); the ACB completion callback,
 //! `acb_on_event`, is the platform port's (`webos::video_sink`) and feeds the plane owner's mailbox.
