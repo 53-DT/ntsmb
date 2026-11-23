@@ -80,7 +80,10 @@ impl RangeServer {
 
 impl Drop for RangeServer {
     fn drop(&mut self) {
-        self.shutdown();
+        // The frame thread may own this value during playback teardown. Signal the listener and
+        // detach its join handle; the worker finishes active requests and closes the SMB handle.
+        self.stop.store(true, Ordering::Release);
+        let _ = self.thread.take();
     }
 }
 
