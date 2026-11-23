@@ -92,6 +92,16 @@ impl Session {
             .await
             .map_err(|e| format!("Could not disconnect SMB share: {e}"))
     }
+
+    /// Blocking worker-thread convenience for clean disconnect.
+    pub fn disconnect_blocking(self) -> Result<(), String> {
+        smol::block_on(self.disconnect())
+    }
+}
+
+/// Connect and authenticate using the app's worker-thread execution model.
+pub fn connect_blocking(host: &str, username: &str, password: &str, share_name: &str) -> Result<Session, String> {
+    smol::block_on(Session::connect(host, username, password, share_name))
 }
 
 /// Turn a host or host:port into the TCP endpoint smb2 expects.
