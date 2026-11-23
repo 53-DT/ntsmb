@@ -4197,6 +4197,8 @@ pub(in crate::app) mod lifecycle_regression_tests {
                 shots: Default::default(),
                 auto_tried: Default::default(),
                 playurl_armed: Default::default(),
+                #[cfg(feature = "devtriggers")]
+                smb_worker: None,
                 replay_left: Default::default(),
                 grid_tried: Default::default(),
                 settings_tried: Default::default(),
