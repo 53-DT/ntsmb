@@ -1169,6 +1169,12 @@ impl PlayerAdapter {
         self.range_server = Some(range_server);
     }
 
+    /// Discard an app-supplied direct-file source when the player refuses to start it.
+    pub fn clear_external_playback(&mut self) {
+        *self.external_play_url.get_mut().unwrap_or_else(|p| p.into_inner()) = None;
+        self.range_server.take();
+    }
+
     pub(super) fn play_url(&self) -> Option<Result<plx_playback_contract::playurl::PlayUrl, String>> {
         if let Some(play) = self.external_play_url.lock().unwrap_or_else(|p| p.into_inner()).take() {
             return Some(Ok(play));
