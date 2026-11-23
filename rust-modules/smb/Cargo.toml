@@ -11,6 +11,8 @@ name = "plx_smb"
 crate-type = ["rlib"]
 
 [dependencies]
+plx_play_feed = { path = "../play-feed" }
+plx_playback_contract = { path = "../playback-contract" }
 smb2 = { version = "=0.26.0", default-features = false, features = ["smol"] }
 smol = "2"
 
