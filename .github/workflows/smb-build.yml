@@ -33,7 +33,8 @@ jobs:
       telemetry: none
       smb-smoke: true
       artifact: smb-webos-debug-ipk
-      source-asset: true
+      source-asset: false
+      lgpl-ffmpeg-source: true
       caches: true
       fwcompat: true
       upload-debug-files: false
