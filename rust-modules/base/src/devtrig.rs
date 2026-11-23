@@ -148,6 +148,18 @@ pub fn read(_name: &str) -> Option<String> {
     None
 }
 
+/// Read the one SMB playback smoke-test request. Unlike the general developer-trigger API, this
+/// accessor is available only to the dedicated `smb-smoke` feature and names no other trigger.
+#[cfg(feature = "smb-smoke")]
+pub fn read_smb_smoke() -> Option<String> {
+    crate::step::assert_io_allowed("SMB smoke-test trigger read");
+    std::fs::read_to_string(path("smb")).ok().map(|s| s.trim().to_string())
+}
+#[cfg(not(feature = "smb-smoke"))]
+pub fn read_smb_smoke() -> Option<String> {
+    None
+}
+
 /// The platform's PRESET: the triggers a platform with no writable runtime root arms in a table instead of files.
 ///
 /// A hosted platform (the Tizen emulator build) has nobody who can write `plxnative-token` into its runtime root, so
@@ -322,7 +334,7 @@ pub const ENABLED: bool = cfg!(feature = "devtriggers");
 ///
 /// `pub(crate)` so `dev::scenarios`, which hands a trigger's PATH (not its content) to the
 /// recorder's own parser, goes through the same door instead of re-spelling the prefix.
-#[cfg(any(feature = "devtriggers", test, feature = "test-support"))]
+#[cfg(any(feature = "devtriggers", feature = "smb-smoke", test, feature = "test-support"))]
 pub fn path(name: &str) -> std::path::PathBuf {
     #[cfg(any(test, feature = "test-support"))]
     if let Some(root) = private::root() {
