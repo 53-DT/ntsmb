@@ -1,7 +1,8 @@
-//! Every dev-trigger ARM — the code that reads `/tmp/plxnative-*` through [`plx_base::devtrig::flag`] /
-//! [`plx_base::devtrig::read`] / [`plx_base::devtrig::latched_flag!`] and reacts to it — gathered on one file (UI
-//! restructure spec v4 §3.3 step 2 / §11, phase 10 lane P). A PURE MOVE: no trigger was renamed,
-//! no timing changed, no ordering changed. Before this phase the arms were spread across four
+//! Every dev-trigger ARM — plus the isolated SMB playback smoke arm — gathered on one file (UI
+//! restructure spec v4 §3.3 step 2 / §11, phase 10 lane P). General triggers read through
+//! [`plx_base::devtrig::flag`] / [`plx_base::devtrig::read`] / [`plx_base::devtrig::latched_flag!`];
+//! the one-file SMB smoke request uses `read_smb_smoke` and its own feature gate. A PURE MOVE for
+//! the historical arms: no trigger was renamed, no timing changed, no ordering changed. Before this phase the arms were spread across four
 //! loop files — `app/boot.rs` (read-once boot flags), `app/run.rs`'s `dev_scripts` and the
 //! oscillator continuations embedded in its frame phases, `app/content.rs` (the detail-page
 //! headless walk), and one pre-SDL flag in `app/mod.rs` — each reaching straight into `App`'s
