@@ -9,8 +9,8 @@ pub struct PreparedPlayback {
 }
 
 /// Open one share-relative SMB file, expose it through loopback HTTP Range and inspect the actual
-/// codecs with the bundled FFmpeg demuxer. The session is retained by RangeServer and disconnected
-/// only after playback releases the file handle.
+/// codecs with the bundled FFmpeg demuxer. The authenticated session is transferred into RangeServer and disconnected
+/// only after the file handle and any in-flight HTTP range handlers have been released.
 pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlayback, String> {
     let reader = session.open_file_blocking(path)?;
     let bridge = RangeServer::start_with_session(reader, session)?;
