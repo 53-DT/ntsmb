@@ -47,6 +47,8 @@ test-support = ["plx_media_codecs/test-support", "plx_base/test-support", "plx_m
 
 [dependencies]
 plx_playback_contract = { path = "../playback-contract" }
+# Loopback HTTP Range bridge for direct SMB media playback.
+plx_smb = { path = "../smb" }
 plx_media_codecs = { path = "../media-codecs" }
 plx_base = { path = "../base" }
 plx_machine = { path = "../machine" }
