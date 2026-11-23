@@ -280,6 +280,8 @@ plx_play_uri = { path = "play-uri", optional = true }
 # The buffer-feed backend the application composes into the player's physical set (`app::adapters::backends`).
 plx_play_feed = { path = "play-feed", optional = true }
 plx_media_codecs = { path = "media-codecs" }
+# SMB2/3 transport and the probed loopback Range bridge used by the native file player.
+plx_smb = { path = "smb", features = ["playback"] }
 # The appkit layer (ci/module-layers.ini `[appkit]`): the widgets several screens share, composed from
 # the ui library over application types (the player HUD, the track menus, the info panel, the Sources row
 # model). It links nothing on the television; its build script is for the host test binary.
