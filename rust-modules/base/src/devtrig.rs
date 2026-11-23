@@ -333,7 +333,8 @@ pub const ENABLED: bool = cfg!(feature = "devtriggers");
 /// and the fn is gone exactly as before.
 ///
 /// `pub(crate)` so `dev::scenarios`, which hands a trigger's PATH (not its content) to the
-/// recorder's own parser, goes through the same door instead of re-spelling the prefix.
+/// recorder's own parser, goes through the same door instead of re-spelling the prefix. The
+/// `smb-smoke` feature compiles this helper only for the one dedicated smoke-test reader.
 #[cfg(any(feature = "devtriggers", feature = "smb-smoke", test, feature = "test-support"))]
 pub fn path(name: &str) -> std::path::PathBuf {
     #[cfg(any(test, feature = "test-support"))]
