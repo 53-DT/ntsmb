@@ -18,7 +18,7 @@
       "limit": 168,
       "measured": 168,
       "measured_on": "2026-11-23",
-      "headroom": "0 (exact measured graph, including the reviewed STORE ZIP reader/writer and the verify-only ed25519-compact)",
+      "headroom": "0 (exact measured graph; no unreviewed headroom)",
       "why": "The pure-Rust SMB2/3 client adds protocol authentication, signing/encryption primitives and the smol async I/O runtime. This keeps SMB self-contained without a separate daemon or an LGPL C/FFI library; the measured default ARM graph is 168 packages."
     },
     "packages_no_default_features": {
@@ -28,7 +28,7 @@
       "limit": 168,
       "measured": 168,
       "measured_on": "2026-11-23",
-      "headroom": "0 (exact measured graph, including the reviewed STORE ZIP reader/writer and the verify-only ed25519-compact)",
+      "headroom": "0 (exact measured graph; no unreviewed headroom)",
       "why": "The SMB2/3 transport remains available independently of playback backends. Its authentication, signing/encryption primitives and smol async I/O runtime account for the measured 168-package graph; this avoids a separate daemon or an LGPL C/FFI library."
     },
     "duplicate_versions_default": {
