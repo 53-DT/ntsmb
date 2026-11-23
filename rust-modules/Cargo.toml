@@ -16,6 +16,7 @@ members = [
     "ui",
     "plex",
     "jellyfin",
+    "smb",
     "telemetry",
     "data",
     "session",
