@@ -1,61 +1,39 @@
-# SMB-first UI plan — Fin Native interaction styling, simple file browser
+# SMB file-browser plan — simple layout, polished TV controls
 
-## Correct UI scope (explicit requirement)
+## UI scope
 
-This is **not** a Plex/Fin Native Home or Library UI clone. Do not keep or reproduce the Plex-style home, catalog, poster shelves, movie/TV detail pages, watchlists, server-driven navigation or metadata-first experience. The normal application should be a straightforward SMB file browser: connect to a share, browse folders, select a video and play it. Keep it simple and functional; no unnecessary artwork, hero banners, shelves, catalog pages or elaborate media discovery.
+The application is a **simple SMB file browser and native video player**, not a Plex/Jellyfin media catalog.
 
-The requirement to retain Fin Native UI means retaining its **UI components and interaction polish**, especially:
-- Fin Native / Apple-TV-like buttons, pills, panels and setting controls.
-- The same directional focus/cursor movement, focus animation, focus highlight, and remote-control navigation behavior.
-- Existing style, spacing, typography, colors, transitions and modal/panel presentation for settings and dialogs.
-- Consistent OK/Select, Back, focus return/restoration, and scroll behavior on the TV remote.
-- Reuse of its shared UI primitives, input/focus machinery, form/table/panel components and settings style.
+Use Fin Native's UI primitives and interaction polish selectively:
+- rounded Apple-TV-like buttons, settings controls and panels
+- focus/cursor movement, focus highlighting and transitions
+- remote-control directional navigation, OK/Select, BACK and focus restoration
+- established spacing, typography, colors and modal/dialog style for settings and forms
 
-Use these polished controls and focus behavior within a practical file-browser layout. Do not transplant the entire Fin Native content/navigation architecture.
+Do **not** retain or recreate Home, libraries, poster shelves, hero banners, movie/TV detail pages, watchlists, metadata-driven navigation or catalog/discovery screens.
 
-## UI design direction
+## MVP screens
 
-- **Main view:** simple folder/file list or compact grid; directory navigation and breadcrumbs/path display; supported video files identifiable by filename and optional small file-type icon.
-- **Folder navigation:** enter a folder, go up/back, preserve sensible cursor position when returning; remote-first.
-- **Settings:** Fin Native style settings screen and controls. Connection profiles, add/edit/delete, credentials, SMB options and playback preferences live here.
-- **Connection form:** use the existing Fin Native form/input/button styling and focus behavior. Fields: server/host, share, optional starting path, username, password, guest mode; connect/test, validation and error states.
-- **Dialogs:** use the existing Fin Native panel/modal and Apple-TV-like button presentation.
-- **Playback:** retain the existing player and its controls/behavior if the existing player is reusable; do not make a Plex-style library UI prerequisite for playback.
-
-## Existing code areas to reuse selectively
-
-- Shared focus/input/remote navigation and UI primitives: `rust-modules/ui/src/`
-- Settings screen and navigation patterns: `rust-modules/screens/src/settings.rs`
-- Forms, panels, popovers, dialogs, controls and focus behavior in shared UI.
-- Existing player UI/engine only where it can be used independently of Plex/server catalog flow.
-- App routing and lifecycle: `rust-modules/src/app/`
-
-**Do not preserve/recreate** Home, Plex catalog/library shelves, posters, detail screens, watchlists, server selection flows or metadata-oriented navigation just for visual parity. Only shared styling/interaction patterns are desired.
-
-## Backend/product transformation
-
-1. **SMB connection management** — Replace Plex sign-in/onboarding with SMB connection form. Host, share, username/password, guest access, optional starting path, test/connect and error feedback.
-2. **Connection profiles** — Add/manage multiple SMB connections in settings. Store credentials securely using webOS Keymanager or an approved secure mechanism. Never plaintext credentials in ordinary settings/config, logs, URLs or repo.
-3. **File browser** — Implement a plain remote-friendly folder/file browser backed by the SMB directory listing. Show folders and video files; browse, back, and open. Avoid unnecessary metadata/artwork.
-4. **Playback** — Use the SMB range bridge and existing player handoff; preserve seeking via byte-range reads. Playback must work from direct file selection.
-5. **Remove Plex dependency** — Remove Plex sign-in, server/catalog routes and unrelated server features once replacement paths work. Keep shared UI/input and reusable playback code.
-6. **Optional metadata** — Not required for MVP; only consider later as optional enhancement.
+1. **Connections/settings** — add/edit/remove SMB profiles; host, share, optional path, username/password, guest mode, test/connect; use the existing settings/form/control style.
+2. **File browser** — plain folder/file list or compact grid, current path/breadcrumb, folders and supported video filenames. Open folders, go up, preserve cursor where practical. Keep it simple; no artwork or metadata requirement.
+3. **Playback** — selecting a video starts it using the SMB range bridge and reusable native player, with seeking if supported.
+4. **Connection profiles** — multiple profiles; credentials must use secure storage (webOS Keymanager or approved mechanism), never plaintext in ordinary settings, logs or URLs.
+5. **Remove Plex/Jellyfin-specific flow** — remove sign-in, server/catalog routes and irrelevant functionality once SMB flow works. Keep reusable controls/input and playback infrastructure.
+6. **Optional enhancements later** — metadata or thumbnails are not MVP and must not be prerequisites for browsing or playback.
 
 ## Acceptance criteria
 
-- App's ordinary screen is a simple file browser, not a Plex-style media catalog.
-- Settings, forms, buttons, panels, modal/dialog styling and remote cursor/focus behavior match Fin Native's polished interaction style.
-- Remote directional navigation, focus highlight/movement, OK, BACK, focus restoration and scroll behavior are tested on TV.
-- SMB connect, shares/folders and media file browsing work without Plex login or server.
-- Selecting a file starts playback through the existing player with seeking support.
-- Credentials securely stored and never leaked in logs or playback URLs.
-- Debug build remains isolated from stable Fin Native.
-- TV testing required before calling SMB UI/playback complete.
+- Main UI is a practical file browser.
+- Settings, buttons, panels, dialogs and focus/remote behavior retain the desired Fin Native polish.
+- TV remote directional movement, focus, select, back and focus restoration tested on target TV.
+- Browse SMB shares/folders without Plex or Jellyfin server.
+- Play selected video through existing native player; seeking uses SMB range reads.
+- Credentials protected and not leaked in logs or URLs.
+- Debug app install is isolated from stable app.
+- TV testing required before declaring MVP complete.
 
-## Current status (2026-11-24)
+## Status
 
-- Repository fork and `smb-development` branch exist.
-- SMB2/3 transport, directory listing, random-access reads, loopback range bridge and FFmpeg probe/player handoff foundation are present.
-- Draft PR tracks backend implementation; current checked CI run was reported successful.
-- SMB connection UI, simple file browser, secure credential persistence and Plex/server-flow removal are not implemented yet.
-- This plan is a tracking document; it does not claim the end-user SMB app is finished.
+- Fork and development branch exist.
+- SMB2/3 backend, directory listing, random-access reads, loopback range bridge and player handoff foundation are present.
+- Connection UI, file browser, secure credential persistence, removal of media-server flows and end-to-end TV testing remain outstanding.
