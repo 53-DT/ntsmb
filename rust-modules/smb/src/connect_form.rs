@@ -15,6 +15,8 @@ pub struct ConnectForm {
     pub username: String,
     pub password: String,
     pub guest: bool,
+    /// Selected disk share; unset until the authenticated server's share list is shown.
+    pub share: Option<String>,
     pub save_connection: bool,
 }
 
@@ -26,6 +28,7 @@ impl fmt::Debug for ConnectForm {
             .field("username", &self.username)
             .field("password", &"<redacted>")
             .field("guest", &self.guest)
+            .field("share", &self.share)
             .field("save_connection", &self.save_connection)
             .finish()
     }
@@ -57,6 +60,9 @@ impl ConnectForm {
         if !self.guest && self.password.is_empty() {
             return Err("Enter the SMB password, or enable Guest".into());
         }
+        let mut profile = profile;
+        profile.share = self.share.as_deref().map(str::trim).filter(|share| !share.is_empty()).map(str::to_owned);
+        profile.validate()?;
         Ok(ConnectRequest { profile, password: if self.guest { String::new() } else { self.password.clone() } })
     }
 
@@ -109,6 +115,7 @@ mod tests {
         assert_eq!(req.profile.port, 445);
         assert!(req.profile.guest);
         assert_eq!(req.password(), "");
+        assert_eq!(req.profile.share, None);
     }
 
     #[test]
@@ -122,8 +129,20 @@ mod tests {
         let request = form.validate().unwrap();
         assert_eq!(request.profile.username, "viewer");
         assert_eq!(request.password(), "secret");
+        assert_eq!(request.profile.share, None);
         assert!(!format!("{form:?}").contains("secret"));
         assert!(!format!("{request:?}").contains("secret"));
+    }
+
+    #[test]
+    fn selected_share_is_trimmed_and_invalid_share_is_rejected() {
+        let mut form = ConnectForm::new();
+        form.host = "nas.local".into();
+        form.guest = true;
+        form.share = Some(" Movies ".into());
+        assert_eq!(form.validate().unwrap().profile.share.as_deref(), Some("Movies"));
+        form.share = Some("Movies/Films".into());
+        assert!(form.validate().unwrap_err().contains("share"));
     }
 
     #[test]
