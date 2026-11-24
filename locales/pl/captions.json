@@ -1,8 +1,0 @@
-{
-  "captions.new_episodes": {
-    "one": "{count} nowy odcinek",
-    "few": "{count} nowe odcinki",
-    "many": "{count} nowych odcinków",
-    "other": "{count} nowego odcinka"
-  }
-}

@@ -1,1 +1,0 @@
-../../.agents/agents/pr-reviewer.md

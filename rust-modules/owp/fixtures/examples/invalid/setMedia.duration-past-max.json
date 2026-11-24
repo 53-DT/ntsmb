@@ -1,9 +1,0 @@
-{
-  "type": "setMedia",
-  "media": {
-    "kind": "movie",
-    "title": "Shoah",
-    "year": 1985,
-    "durationMs": 604800001
-  }
-}

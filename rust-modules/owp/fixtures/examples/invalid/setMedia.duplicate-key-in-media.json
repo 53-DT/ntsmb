@@ -1,9 +1,0 @@
-{
-  "type": "setMedia",
-  "media": {
-    "kind": "movie",
-    "title": "Arrival",
-    "durationMs": "x",
-    "durationMs": 6960000
-  }
-}

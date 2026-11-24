@@ -95,6 +95,17 @@ impl ConnectRequest {
     pub fn connect_server(&self) -> Result<crate::Server, String> {
         crate::connect_profile_blocking(&self.profile, Some(&self.password))
     }
+
+    /// Authenticate and enumerate the available shares as one worker operation. The returned
+    /// server handle stays alive so the caller can connect the selected share without
+    /// authenticating a second time. MUST run on an application worker, never a UI frame.
+    pub fn connect_and_list_shares(
+        &self,
+    ) -> Result<(crate::Server, Vec<crate::ShareInfo>), String> {
+        let mut server = self.connect_server()?;
+        let shares = server.list_shares_blocking()?;
+        Ok((server, shares))
+    }
 }
 
 impl fmt::Debug for ConnectRequest {

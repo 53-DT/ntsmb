@@ -1,2 +1,0 @@
-# count: 0
-# Person receives its complete registered-slot roster, session, control/provider policy and dev seeds as PersonInput.
