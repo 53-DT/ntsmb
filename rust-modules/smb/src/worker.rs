@@ -95,9 +95,9 @@ fn worker_loop(commands: Receiver<Command>, events: Sender<Event>) {
 
     while let Ok(command) = commands.recv() {
         match command {
-            Command::Connect(request) => {
+            Command::Connect(incoming) => {
                 share = None;
-                request = Some(request.clone());
+                request = Some(incoming);
                 match request.as_ref().expect("request just stored").connect_and_list_shares() {
                     Ok((_connected, shares)) => {
                         let _ = events.send(Event::Shares(Ok(shares)));
