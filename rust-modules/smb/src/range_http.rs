@@ -57,19 +57,23 @@ impl BridgeStats {
 impl RangeServer {
     /// Start serving the already-open SMB reader on an ephemeral loopback port.
     pub fn start(reader: FileReader) -> Result<Self, String> {
-        Self::start_inner(reader, None)
+        Self::start_inner(Arc::new(reader), None)
     }
 
     /// Start serving a reader and retain its authenticated SMB session until playback stops.
     /// The share is disconnected only after active HTTP handlers and the file reader are closed.
     pub fn start_with_session(reader: FileReader, session: crate::Session) -> Result<Self, String> {
+        Self::start_inner(Arc::new(reader), Some(session))
+    }
+
+    /// Start serving a reader already shared with the FFmpeg custom-AVIO probe.
+    pub fn start_shared_with_session(reader: Arc<FileReader>, session: crate::Session) -> Result<Self, String> {
         Self::start_inner(reader, Some(session))
     }
 
-    fn start_inner(reader: FileReader, session: Option<crate::Session>) -> Result<Self, String> {
+    fn start_inner(reader: Arc<FileReader>, session: Option<crate::Session>) -> Result<Self, String> {
         let token = random_token()?;
         let size = reader.size();
-        let reader = Arc::new(reader);
 
         let listener = TcpListener::bind(("127.0.0.1", 0))
             .map_err(|e| format!("Could not start local playback bridge: {e}"))?;
