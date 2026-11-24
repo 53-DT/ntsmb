@@ -108,6 +108,8 @@ fn worker_loop(commands: Receiver<Command>, events: Sender<Event>) {
                 }
             }
             Command::SelectShare(name) => {
+                // Never leave the previous tree active when the user is switching shares.
+                share = None;
                 let Some(connect_request) = request.as_ref() else {
                     let _ = events.send(Event::Directory(Err("Connect to an SMB server first".into())));
                     continue;
