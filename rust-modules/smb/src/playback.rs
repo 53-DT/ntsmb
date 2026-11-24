@@ -14,7 +14,9 @@ pub struct PreparedPlayback {
 pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlayback, String> {
     let reader = session.open_file_blocking(path)?;
     let bridge = RangeServer::start_with_session(reader, session)?;
-    let probe = plx_play_feed::probe_url(bridge.url())?;
+    let probe = plx_play_feed::probe_url(bridge.url()).map_err(|error| {
+        format!("FFmpeg probe failed: {error}; SMB HTTP bridge diagnostics: {}", bridge.diagnostics())
+    })?;
     let video_codec = probe
         .video_codec
         .ok_or_else(|| "No video stream found".to_string())?;
