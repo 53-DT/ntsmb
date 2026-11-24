@@ -151,12 +151,20 @@ fn handle(mut stream: TcpStream, token: &str, size: u64, reader: Arc<FileReader>
     let request = match read_request(&mut stream) {
         Ok(request) => request,
         Err(_) => {
+            stats.bad_requests.fetch_add(1, Ordering::Relaxed);
             let _ = response(&mut stream, 400, "Bad Request", &[], None);
             return;
         }
     };
+    stats.requests.fetch_add(1, Ordering::Relaxed);
+    match request.method.as_str() {
+        "GET" => { stats.get_requests.fetch_add(1, Ordering::Relaxed); }
+        "HEAD" => { stats.head_requests.fetch_add(1, Ordering::Relaxed); }
+        _ => {}
+    }
 
     if request.target != format!("/{token}") {
+        stats.bad_paths.fetch_add(1, Ordering::Relaxed);
         let _ = response(&mut stream, 404, "Not Found", &[], None);
         return;
     }
@@ -174,6 +182,7 @@ fn handle(mut stream: TcpStream, token: &str, size: u64, reader: Arc<FileReader>
     let (start, end, partial) = match requested_range(range_header, size) {
         Ok(range) => range,
         Err(()) => {
+            stats.bad_ranges.fetch_add(1, Ordering::Relaxed);
             let extra = [("Content-Range", format!("bytes */{size}"))];
             let _ = response(&mut stream, 416, "Range Not Satisfiable", &extra, Some(0));
             return;
@@ -203,14 +212,20 @@ fn handle(mut stream: TcpStream, token: &str, size: u64, reader: Arc<FileReader>
         let wanted = (end - offset + 1).min(READ_CHUNK);
         let bytes = match smol::block_on(reader.read_at(offset, wanted)) {
             Ok(bytes) => bytes,
-            Err(_) => return,
+            Err(_) => {
+                stats.read_errors.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
         };
         if bytes.is_empty() {
+            stats.read_errors.fetch_add(1, Ordering::Relaxed);
             return;
         }
         if stream.write_all(&bytes).is_err() {
+            stats.read_errors.fetch_add(1, Ordering::Relaxed);
             return;
         }
+        stats.bytes_served.fetch_add(bytes.len() as u64, Ordering::Relaxed);
         offset += bytes.len() as u64;
         if bytes.len() as u64 != wanted {
             return;
