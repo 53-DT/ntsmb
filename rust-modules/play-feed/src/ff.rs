@@ -417,9 +417,9 @@ extern "C" fn probe_read_packet(opaque: *mut c_void, buffer: *mut u8, buffer_siz
     if opaque.is_null() || buffer.is_null() || buffer_size <= 0 { return -5; }
     let state = unsafe { &*(opaque as *const ProbeAvioState) };
     let mut offset = match state.offset.lock() { Ok(v) => v, Err(e) => e.into_inner() };
-    if *offset >= state.source.size() { return 0; }
+    if *offset >= state.source.size() { return -541478725; }
     match state.source.read_at(*offset, buffer_size as usize) {
-        Ok(bytes) if bytes.is_empty() => 0,
+        Ok(bytes) if bytes.is_empty() => -541478725,
         Ok(bytes) => {
             let count = bytes.len().min(buffer_size as usize);
             unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, count); }
