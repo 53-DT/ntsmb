@@ -4,7 +4,7 @@
 //! authenticated server/share handles and serializes connection, share-selection and directory
 //! requests on one background thread. The UI/app boundary sends commands and drains events.
 
-use crate::{connect_form::ConnectRequest, Entry, Server, Session, ShareInfo};
+use crate::{connect_form::ConnectRequest, Entry, Session, ShareInfo};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
 
@@ -88,17 +88,18 @@ impl Drop for SmbWorker {
 }
 
 fn worker_loop(commands: Receiver<Command>, events: Sender<Event>) {
-    let mut server: Option<Server> = None;
+    // Keep the validated request so a failed share selection can be retried without forcing
+    // the user back through the connection form. The password stays worker-local and Debug-redacted.
+    let mut request: Option<ConnectRequest> = None;
     let mut share: Option<Session> = None;
 
     while let Ok(command) = commands.recv() {
         match command {
             Command::Connect(request) => {
                 share = None;
-                server = None;
-                match request.connect_and_list_shares() {
-                    Ok((connected, shares)) => {
-                        server = Some(connected);
+                request = Some(request.clone());
+                match request.as_ref().expect("request just stored").connect_and_list_shares() {
+                    Ok((_connected, shares)) => {
                         let _ = events.send(Event::Shares(Ok(shares)));
                     }
                     Err(error) => {
@@ -107,9 +108,16 @@ fn worker_loop(commands: Receiver<Command>, events: Sender<Event>) {
                 }
             }
             Command::SelectShare(name) => {
-                let Some(connected) = server.take() else {
+                let Some(connect_request) = request.as_ref() else {
                     let _ = events.send(Event::Directory(Err("Connect to an SMB server first".into())));
                     continue;
+                };
+                // Authenticate a fresh share session for each selection. `connect_share` consumes
+                // its Server handle, so reconnecting here keeps the server request available if
+                // the share name is mistyped or the NAS temporarily rejects that tree connection.
+                let connected = match connect_request.connect_server() {
+                    Ok(server) => server,
+                    Err(error) => { let _ = events.send(Event::Directory(Err(error))); continue; }
                 };
                 match connected.connect_share_blocking(&name) {
                     Ok(mut connected_share) => match connected_share.list_directory_blocking("") {
@@ -136,7 +144,7 @@ fn worker_loop(commands: Receiver<Command>, events: Sender<Event>) {
             }
             Command::Disconnect => {
                 share = None;
-                server = None;
+                request = None;
                 let _ = events.send(Event::Disconnected);
             }
             Command::Shutdown => break,
