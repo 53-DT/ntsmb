@@ -85,6 +85,22 @@ pub fn connect_server_blocking(
     smol::block_on(Server::connect(host, port, username, password))
 }
 
+/// Connect using a validated saved or in-memory NT-SMB profile. Guest mode deliberately supplies
+/// the conventional guest identity and an empty password; it never reads a stored credential.
+pub fn connect_profile_blocking(
+    profile: &profile::ConnectionProfile,
+    password: Option<&str>,
+) -> Result<Server, String> {
+    profile.validate()?;
+    let (username, password) = if profile.guest {
+        ("guest", "")
+    } else {
+        let password = password.ok_or_else(|| "Enter the SMB password".to_string())?;
+        (profile.username.as_str(), password)
+    };
+    smol::block_on(Server::connect(&profile.host, profile.port, username, password))
+}
+
 /// An authenticated connection to one share.
 ///
 /// The SMB client and share tree are kept together because a tree is scoped to its session.
