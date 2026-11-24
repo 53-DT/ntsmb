@@ -89,6 +89,12 @@ pub struct ConnectRequest {
 
 impl ConnectRequest {
     pub fn password(&self) -> &str { &self.password }
+
+    /// Authenticate the validated request and return the server handle for share enumeration.
+    /// This performs network I/O and MUST be called from an application worker, never a UI frame.
+    pub fn connect_server(&self) -> Result<crate::Server, String> {
+        crate::connect_profile_blocking(&self.profile, Some(&self.password))
+    }
 }
 
 impl fmt::Debug for ConnectRequest {
