@@ -72,9 +72,10 @@ The browser should be deliberately ordinary: clear file/folder names, folder-fir
 
 ## Current status
 
-- SMB2/3 backend, share-relative directory listing, random-access file reads and loopback HTTP Range bridge are present in the development branch.
+- **ARM package:** a debug webOS ARMv7 IPK has been built successfully by GitHub Actions for commit `fc76b03aae15b0075dc8c683cf75098e4a4ca6a2`. The dedicated package, ELF, compatibility and firmware gates passed. Artifact: `smb-webos-debug-ipk` in [build run 45328240691](https://github.com/davetrump53-ai/ntsmb/actions/runs/45328240691).
+- **SMB-to-player smoke path:** the SMB2/3 transport and playback feature are linked into the application. The debug-only `smb-smoke` trigger reads one connection/file request on a worker, opens the file through the loopback HTTP Range bridge, probes it with the bundled FFmpeg and hands it to the existing player start path. This is a test hook, not the final browser UI.
+- **TV proof:** not yet performed. The next gate is installing the debug IPK and testing one real SMB video on the target TV, including playback and seeking.
+- **Browser UI:** not yet wired into app routing. The actual SMB connection form and plain file/folder browser still need implementation.
 - Pure browser helpers exist for folders-first sorting, video extension filtering, safe child paths, breadcrumbs and parent navigation.
-- The actual SMB connection/browser screen is not yet wired into app routing.
-- End-to-end SMB-to-FinNative-player playback is not yet proven on the TV.
 - Saved profile persistence, credential protection and Plex/Jellyfin flow removal remain outstanding.
-- The latest CI run is red; its failures must be fixed before an IPK is considered ready for TV testing.
+- The broader CI suite still has failures in dependency-notice and host Python/shell gates, plus simulator replay tests. These do not invalidate the successful dedicated ARM IPK build, but they remain separate cleanup work.
