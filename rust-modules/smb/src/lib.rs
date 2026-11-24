@@ -1,5 +1,8 @@
 //! Direct SMB2/3 access for the native media browser.
 //!
+//! `Server` authenticates once and enumerates disk shares; `Session` owns the selected share.
+//! This split lets the connection screen offer the server's real share list before browsing.
+//!
 //! This layer deliberately knows nothing about Plex, Jellyfin, artwork, metadata providers or
 //! transcoding. It connects to one SMB share, lists a directory and opens random-access file
 //! readers. The player-facing HTTP Range bridge is a separate layer so SMB credentials and
