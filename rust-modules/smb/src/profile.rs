@@ -75,7 +75,7 @@ impl ConnectionProfile {
         if self.host.is_empty()
             || self.host.contains("://")
             || self.host.contains('/')
-            || self.host.contains('\\\\')
+            || self.host.contains('\\')
             || self.host.chars().any(char::is_whitespace)
             || self.host.contains(':')
         {
@@ -91,7 +91,7 @@ impl ConnectionProfile {
             return Err("Guest profiles must not contain a password".into());
         }
         if self.share.as_deref().is_some_and(|share| {
-            share.trim().is_empty() || share.contains('/') || share.contains('\\\\')
+            share.trim().is_empty() || share.contains('/') || share.contains('\\')
         }) {
             return Err("Invalid saved SMB share".into());
         }
