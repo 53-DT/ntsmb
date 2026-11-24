@@ -6,6 +6,8 @@ use crate::{range_http::RangeServer, Session};
 pub struct PreparedPlayback {
     pub play: plx_playback_contract::playurl::PlayUrl,
     pub bridge: RangeServer,
+    /// Probe facts retained for the local playback metadata/track menu.
+    pub probe: plx_play_feed::SourceProbe,
 }
 
 /// Open one share-relative SMB file, expose it through loopback HTTP Range and inspect the actual
@@ -33,6 +35,7 @@ pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlay
     let bridge = RangeServer::start_shared_with_session(reader, session)?;
     let video_codec = probe
         .video_codec
+        .clone()
         .ok_or_else(|| "No video stream found".to_string())?;
     let (profile, compatibility, enhancement) = probe
         .dovi
@@ -48,7 +51,7 @@ pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlay
     let play = plx_playback_contract::playurl::PlayUrl {
         url: bridge.url().to_owned(),
         vcodec: video_codec,
-        acodec: probe.audio_codec.unwrap_or_default(),
+        acodec: probe.audio_codec.clone().unwrap_or_default(),
         fps: 0.0,
         dovi: plx_playback_contract::playurl::PlayDovi {
             profile,
@@ -63,5 +66,5 @@ pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlay
             .then_some([probe.width, probe.height]),
     };
 
-    Ok(PreparedPlayback { play, bridge })
+    Ok(PreparedPlayback { play, bridge, probe })
 }
