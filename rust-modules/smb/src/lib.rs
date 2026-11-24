@@ -101,6 +101,21 @@ pub fn connect_profile_blocking(
     smol::block_on(Server::connect(&profile.host, profile.port, username, password))
 }
 
+/// Reconnect from a saved profile. The password is opened only through the platform's secure
+/// credential store; missing, unsupported or unreadable credentials produce a prompt-worthy
+/// error rather than attempting an empty or plaintext password.
+pub fn connect_saved_profile_blocking(
+    profile: &profile::ConnectionProfile,
+) -> Result<Server, String> {
+    profile.validate()?;
+    if profile.guest {
+        return connect_profile_blocking(profile, None);
+    }
+    let password = profile.reveal_password()
+        .ok_or_else(|| "Saved SMB password is unavailable. Please enter it again.".to_string())?;
+    connect_profile_blocking(profile, Some(&password))
+}
+
 /// An authenticated connection to one share.
 ///
 /// The SMB client and share tree are kept together because a tree is scoped to its session.
