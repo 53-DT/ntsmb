@@ -9,6 +9,7 @@
 #[cfg(feature = "playback")]
 pub mod playback;
 pub mod range_http;
+pub mod browser;
 
 use smb2::{FileReader, SmbClient, Tree};
 
