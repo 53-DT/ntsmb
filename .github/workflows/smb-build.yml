@@ -5,7 +5,7 @@ name: SMB development build
 
 on:
   push:
-    branches: [smb-development]
+    branches: [smb-development, 0.0.1b-smb-browser]
     paths:
       - ".gitignore"
       - ".github/workflows/smb-build.yml"
@@ -33,7 +33,7 @@ jobs:
       flavor: debug
       telemetry: none
       smb-smoke: true
-      artifact: smb-webos-debug-ipk
+      artifact: smb-webos-debug-ipk-0.0.1b-smb-browser
       source-asset: false
       lgpl-ffmpeg-source: true
       caches: true
