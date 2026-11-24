@@ -33,7 +33,7 @@ jobs:
       flavor: debug
       telemetry: none
       smb-smoke: true
-      artifact: smb-webos-debug-ipk
+      artifact: smb-webos-debug-ipk-build-0.0.1-working-no-subtitles
       source-asset: false
       lgpl-ffmpeg-source: true
       caches: true
