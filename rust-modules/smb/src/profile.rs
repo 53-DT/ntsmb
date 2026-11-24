@@ -72,12 +72,15 @@ impl ConnectionProfile {
         if self.schema != PROFILE_SCHEMA {
             return Err("Unsupported saved SMB profile version".into());
         }
+        let is_ip = self.host.parse::<std::net::IpAddr>().is_ok()
+            || self.host.strip_prefix('[').and_then(|host| host.strip_suffix(']'))
+                .is_some_and(|host| host.parse::<std::net::Ipv6Addr>().is_ok());
         if self.host.is_empty()
             || self.host.contains("://")
             || self.host.contains('/')
             || self.host.contains('\\')
             || self.host.chars().any(char::is_whitespace)
-            || self.host.contains(':')
+            || (self.host.contains(':') && !is_ip)
         {
             return Err("Enter a hostname or IP address without a port".into());
         }
@@ -155,6 +158,8 @@ mod tests {
     #[test]
     fn host_and_port_are_validated_independently() {
         assert!(ConnectionProfile::new("nas.local:1445", 445, "alice", false).is_err());
+        assert!(ConnectionProfile::new("2001:db8::1", 445, "alice", false).is_ok());
+        assert!(ConnectionProfile::new("[2001:db8::1]", 445, "alice", false).is_ok());
         assert!(ConnectionProfile::new("nas.local", 0, "alice", false).is_err());
         assert!(ConnectionProfile::new("nas.local", 445, "", false).is_err());
     }
