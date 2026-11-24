@@ -42,7 +42,28 @@ impl Session {
         password: &str,
         share_name: &str,
     ) -> Result<Self, String> {
-        let address = endpoint(host)?;
+        Self::connect_address(endpoint(host)?, username, password, share_name).await
+    }
+
+    /// Connect with a separately supplied TCP port, as used by the NT-SMB connection form.
+    /// The host field contains only a hostname or IP address; the port is validated independently.
+    pub async fn connect_on_port(
+        host: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+        share_name: &str,
+    ) -> Result<Self, String> {
+        let address = endpoint_with_port(host, port)?;
+        Self::connect_address(address, username, password, share_name).await
+    }
+
+    async fn connect_address(
+        address: String,
+        username: &str,
+        password: &str,
+        share_name: &str,
+    ) -> Result<Self, String> {
         let share_name = share_name.trim();
         if share_name.is_empty() || share_name.contains('/') || share_name.contains('\\') {
             return Err("Invalid SMB share name".into());
@@ -118,6 +139,52 @@ pub fn connect_blocking(host: &str, username: &str, password: &str, share_name: 
     smol::block_on(Session::connect(host, username, password, share_name))
 }
 
+/// Worker-thread convenience for the separate host/port fields in the SMB form.
+pub fn connect_blocking_on_port(
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    share_name: &str,
+) -> Result<Session, String> {
+    smol::block_on(Session::connect_on_port(host, port, username, password, share_name))
+}
+
+/// Build a TCP endpoint from a hostname/IP and a separately supplied port.
+fn endpoint_with_port(host: &str, port: u16) -> Result<String, String> {
+    if port == 0 {
+        return Err("Invalid SMB server port".into());
+    }
+    let host = host.trim();
+    if host.is_empty()
+        || host.contains("://")
+        || host.contains('/')
+        || host.contains('\\')
+        || host.chars().any(char::is_whitespace)
+    {
+        return Err("Invalid SMB server address".into());
+    }
+
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return Ok(match ip {
+            std::net::IpAddr::V4(_) => format!("{ip}:{port}"),
+            std::net::IpAddr::V6(_) => format!("[{ip}]:{port}"),
+        });
+    }
+
+    if host.starts_with('[') && host.ends_with(']') {
+        let inner = &host[1..host.len() - 1];
+        if inner.parse::<std::net::Ipv6Addr>().is_ok() {
+            return Ok(format!("[{inner}]:{port}"));
+        }
+    }
+
+    if host.contains(':') || host.starts_with('[') || host.ends_with(']') {
+        return Err("Enter the host without a port; use the Port field".into());
+    }
+    Ok(format!("{host}:{port}"))
+}
+
 /// Turn a host or host:port into the TCP endpoint smb2 expects.
 fn endpoint(host: &str) -> Result<String, String> {
     let host = host.trim();
@@ -182,13 +249,28 @@ fn share_path(path: &str, allow_root: bool) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{endpoint, share_path};
+    use super::{endpoint, endpoint_with_port, share_path};
 
     #[test]
     fn endpoint_defaults_to_port_445() {
         assert_eq!(endpoint("nas.local").unwrap(), "nas.local:445");
         assert_eq!(endpoint("192.168.1.20").unwrap(), "192.168.1.20:445");
         assert_eq!(endpoint("2001:db8::1").unwrap(), "[2001:db8::1]:445");
+    }
+
+    #[test]
+    fn separate_port_field_supports_host_ipv4_and_ipv6() {
+        assert_eq!(endpoint_with_port("nas.local", 1445).unwrap(), "nas.local:1445");
+        assert_eq!(endpoint_with_port("192.168.1.20", 445).unwrap(), "192.168.1.20:445");
+        assert_eq!(endpoint_with_port("2001:db8::1", 1445).unwrap(), "[2001:db8::1]:1445");
+        assert_eq!(endpoint_with_port("[2001:db8::1]", 445).unwrap(), "[2001:db8::1]:445");
+    }
+
+    #[test]
+    fn separate_port_field_rejects_invalid_port_and_embedded_port() {
+        assert!(endpoint_with_port("nas.local", 0).is_err());
+        assert!(endpoint_with_port("nas.local:1445", 445).is_err());
+        assert!(endpoint_with_port("smb://nas.local", 445).is_err());
     }
 
     #[test]
