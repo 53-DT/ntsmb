@@ -21,6 +21,66 @@ pub struct Entry {
     pub is_directory: bool,
 }
 
+/// One disk share published by an SMB server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShareInfo {
+    pub name: String,
+    pub comment: String,
+}
+
+/// An authenticated SMB server connection, before a share has been selected.
+/// Keep this on a worker thread; share enumeration performs network I/O.
+pub struct Server {
+    client: SmbClient,
+}
+
+impl Server {
+    pub async fn connect(host: &str, port: u16, username: &str, password: &str) -> Result<Self, String> {
+        let address = endpoint_with_port(host, port)?;
+        let client = smb2::connect(&address, username, password)
+            .await
+            .map_err(|e| format!("SMB connection failed: {e}"))?;
+        Ok(Self { client })
+    }
+
+    pub async fn list_shares(&mut self) -> Result<Vec<ShareInfo>, String> {
+        let shares = self.client.list_shares().await
+            .map_err(|e| format!("Could not list SMB shares: {e}"))?;
+        Ok(shares.into_iter().map(|share| ShareInfo {
+            name: share.name,
+            comment: share.comment,
+        }).collect())
+    }
+
+    pub async fn connect_share(self, share_name: &str) -> Result<Session, String> {
+        let share_name = share_name.trim();
+        if share_name.is_empty() || share_name.contains('/') || share_name.contains('\\') {
+            return Err("Invalid SMB share name".into());
+        }
+        let mut client = self.client;
+        let share = client.connect_share(share_name).await
+            .map_err(|e| format!("Could not connect to SMB share: {e}"))?;
+        Ok(Session { client, share })
+    }
+
+    pub fn list_shares_blocking(&mut self) -> Result<Vec<ShareInfo>, String> {
+        smol::block_on(self.list_shares())
+    }
+
+    pub fn connect_share_blocking(self, share_name: &str) -> Result<Session, String> {
+        smol::block_on(self.connect_share(share_name))
+    }
+}
+
+pub fn connect_server_blocking(
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+) -> Result<Server, String> {
+    smol::block_on(Server::connect(host, port, username, password))
+}
+
 /// An authenticated connection to one share.
 ///
 /// The SMB client and share tree are kept together because a tree is scoped to its session.
