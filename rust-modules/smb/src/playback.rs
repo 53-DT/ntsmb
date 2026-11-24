@@ -11,12 +11,26 @@ pub struct PreparedPlayback {
 /// Open one share-relative SMB file, expose it through loopback HTTP Range and inspect the actual
 /// codecs with the bundled FFmpeg demuxer. The authenticated session is transferred into RangeServer and disconnected
 /// only after the file handle and any in-flight HTTP range handlers have been released.
+struct SmbProbeSource {
+    reader: std::sync::Arc<smb2::FileReader>,
+    size: u64,
+}
+
+impl plx_play_feed::ProbeSource for SmbProbeSource {
+    fn size(&self) -> u64 { self.size }
+
+    fn read_at(&self, offset: u64, length: usize) -> Result<Vec<u8>, String> {
+        smol::block_on(self.reader.read_at(offset, length as u64))
+            .map_err(|error| format!("SMB random read failed: {error}"))
+    }
+}
+
 pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlayback, String> {
-    let reader = session.open_file_blocking(path)?;
-    let bridge = RangeServer::start_with_session(reader, session)?;
-    let probe = plx_play_feed::probe_url(bridge.url()).map_err(|error| {
-        format!("FFmpeg probe failed: {error}; SMB HTTP bridge diagnostics: {}", bridge.diagnostics())
-    })?;
+    let reader = std::sync::Arc::new(session.open_file_blocking(path)?);
+    let source = SmbProbeSource { size: reader.size(), reader: reader.clone() };
+    let probe = plx_play_feed::probe_source(std::sync::Arc::new(source))
+        .map_err(|error| format!("FFmpeg custom-AVIO probe failed: {error}"))?;
+    let bridge = RangeServer::start_shared_with_session(reader, session)?;
     let video_codec = probe
         .video_codec
         .ok_or_else(|| "No video stream found".to_string())?;
