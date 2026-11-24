@@ -1258,15 +1258,26 @@ fn smb_playback_arm(app: &mut App, fr: &mut Frame) -> bool {
             let spawned = std::thread::Builder::new()
                 .name("smb-prepare".into())
                 .spawn(move || {
-                    let result = (|| {
-                        let session = plx_smb::connect_blocking(
-                            &request.host,
-                            &request.username,
-                            &request.password,
-                            &request.share,
-                        )?;
-                        plx_smb::playback::prepare_playback(session, &request.path)
-                    })();
+                    let session = match plx_smb::connect_blocking(
+                        &request.host,
+                        &request.username,
+                        &request.password,
+                        &request.share,
+                    ) {
+                        Ok(session) => session,
+                        Err(error) => {
+                            plx_base::eventlog::log(&format!("smb: connect failed: {error}"));
+                            let _ = tx.send(Err(error));
+                            return;
+                        }
+                    };
+                    let result = match plx_smb::playback::prepare_playback(session, &request.path) {
+                        Ok(prepared) => Ok(prepared),
+                        Err(error) => {
+                            plx_base::eventlog::log(&format!("smb: file open/bridge/FFmpeg probe failed: {error}"));
+                            Err(error)
+                        }
+                    };
                     let _ = tx.send(result);
                 });
             match spawned {
