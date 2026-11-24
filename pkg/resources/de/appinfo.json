@@ -1,4 +1,4 @@
 {
-  "title": "FinNative",
-  "appDescription": "Inoffizieller nativer Jellyfin-Client - steht in keiner Verbindung zu Jellyfin"
+  "title": "NT-SMB",
+  "appDescription": "Native SMB file browser and video player for LG webOS TVs. Browse network folders and play videos directly without Plex or Jellyfin."
 }
