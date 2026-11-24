@@ -8,7 +8,7 @@ use smb2::FileReader;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -26,7 +26,32 @@ const MAX_HEADER: usize = 8192;
 pub struct RangeServer {
     url: String,
     stop: Arc<AtomicBool>,
+    stats: Arc<BridgeStats>,
     thread: Option<JoinHandle<()>>,
+}
+
+#[derive(Default)]
+struct BridgeStats {
+    accepted: AtomicU64,
+    requests: AtomicU64,
+    get_requests: AtomicU64,
+    head_requests: AtomicU64,
+    bad_requests: AtomicU64,
+    bad_paths: AtomicU64,
+    bad_ranges: AtomicU64,
+    read_errors: AtomicU64,
+    bytes_served: AtomicU64,
+}
+
+impl BridgeStats {
+    fn summary(&self) -> String {
+        format!("accepted={} requests={} GET={} HEAD={} bad_request={} bad_path={} bad_range={} read_errors={} bytes={}",
+            self.accepted.load(Ordering::Relaxed), self.requests.load(Ordering::Relaxed),
+            self.get_requests.load(Ordering::Relaxed), self.head_requests.load(Ordering::Relaxed),
+            self.bad_requests.load(Ordering::Relaxed), self.bad_paths.load(Ordering::Relaxed),
+            self.bad_ranges.load(Ordering::Relaxed), self.read_errors.load(Ordering::Relaxed),
+            self.bytes_served.load(Ordering::Relaxed))
+    }
 }
 
 impl RangeServer {
@@ -56,16 +81,19 @@ impl RangeServer {
             .map_err(|e| format!("Could not read local playback address: {e}"))?;
         let url = format!("http://127.0.0.1:{}/{token}", address.port());
         let stop = Arc::new(AtomicBool::new(false));
+        let stats = Arc::new(BridgeStats::default());
         let thread_stop = stop.clone();
+        let thread_stats = stats.clone();
 
         let thread = thread::Builder::new()
             .name("smb-range-http".into())
-            .spawn(move || serve(listener, address, token, size, reader, session, thread_stop))
+            .spawn(move || serve(listener, address, token, size, reader, session, thread_stop, thread_stats))
             .map_err(|e| format!("Could not start local playback worker: {e}"))?;
 
         Ok(Self {
             url,
             stop,
+            stats,
             thread: Some(thread),
         })
     }
@@ -73,6 +101,10 @@ impl RangeServer {
     /// The HTTP URL the existing player can open.
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    pub fn diagnostics(&self) -> String {
+        self.stats.summary()
     }
 
     /// Stop accepting requests, finish active handlers and close the SMB file handle.
@@ -105,15 +137,18 @@ fn serve(
     reader: Arc<FileReader>,
     session: Option<crate::Session>,
     stop: Arc<AtomicBool>,
+    stats: Arc<BridgeStats>,
 ) {
     let mut handlers: Vec<JoinHandle<()>> = Vec::new();
 
     while !stop.load(Ordering::Acquire) {
         match listener.accept() {
             Ok((stream, _peer)) => {
+                stats.accepted.fetch_add(1, Ordering::Relaxed);
                 let reader = reader.clone();
                 let token = token.clone();
-                handlers.push(thread::spawn(move || handle(stream, &token, size, reader)));
+                let stats = stats.clone();
+                handlers.push(thread::spawn(move || handle(stream, &token, size, reader, stats)));
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 thread::sleep(ACCEPT_POLL);
@@ -144,7 +179,7 @@ fn serve(
     }
 }
 
-fn handle(mut stream: TcpStream, token: &str, size: u64, reader: Arc<FileReader>) {
+fn handle(mut stream: TcpStream, token: &str, size: u64, reader: Arc<FileReader>, stats: Arc<BridgeStats>) {
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
 
