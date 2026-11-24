@@ -36,4 +36,6 @@ Do **not** retain or recreate Home, libraries, poster shelves, hero banners, mov
 
 - Fork and development branch exist.
 - SMB2/3 backend, directory listing, random-access reads, loopback range bridge and player handoff foundation are present.
-- Connection UI, file browser, secure credential persistence, removal of media-server flows and end-to-end TV testing remain outstanding.
+- Added pure file-browser helpers for folder-first sorting, video extension filtering, child-path safety, breadcrumbs and parent navigation, with unit tests.
+- The actual remote-control browser screen and SMB connection UI are still not wired into app routing.
+- Secure credential persistence, removal of media-server flows and end-to-end TV testing remain outstanding.
