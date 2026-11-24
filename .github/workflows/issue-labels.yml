@@ -1,0 +1,148 @@
+name: Issue labels
+
+# Labels issues as they are filed: one kind (bug / enhancement), the areas it is about,
+# and `user-report` when the author is not a maintainer. The rules, the fallback and what is never
+# added are in ci/label-issue.py. Labels are only added, never removed.
+#
+# `edited` is handled only for an issue that still has no labels, so retitling an issue does not
+# keep piling labels on, and a label a maintainer removed stays removed.
+#
+# Run by hand to backfill: `issues` takes issue numbers separated by spaces, or `unlabeled` for
+# every open issue that has no labels yet.
+#
+# The issue text is never interpolated into a shell line; the script reads it from the API, and
+# whatever the model answers is filtered down to the repository's own labels before anything is
+# written. The GitHub token can write issues and nothing else.
+#
+# Claude Haiku picks the labels through the Anthropic API. The job holds no Anthropic key: it signs in with
+# Workload Identity Federation (the `id-token: write` permission below; ci/label-issue.py exchanges
+# GitHub's identity token for a short-lived Anthropic token). The federation rule's ids are not
+# secrets; they live in the repository VARIABLES ANTHROPIC_FEDERATION_RULE_ID,
+# ANTHROPIC_ORGANIZATION_ID, ANTHROPIC_SERVICE_ACCOUNT_ID and, if the rule covers several
+# workspaces, ANTHROPIC_WORKSPACE_ID. The rule should accept only this repository's default branch.
+#
+# Fallback: when Anthropic cannot answer (sign-in fails, or the organization is out of credit), the
+# `fallback` job labels exactly the issues `label` failed on (its `failed` output) through
+# OpenRouter: the same Haiku, billed from OpenRouter credit, with a non-Anthropic model as
+# OpenRouter's own retry. The key is the secret OPENROUTER_API_KEY of the `issue-labels`
+# ENVIRONMENT, whose deployment-branch rule admits only the default branch, so a run dispatched
+# from another branch (whose copy of the script could do anything with the key) never receives it.
+# It is a second job because an environment changes the job's OIDC subject from
+# `...:ref:refs/heads/main`, which the federation rule matches, to `...:environment:issue-labels`:
+# the Anthropic job must hold no environment, and the fallback job holds no `id-token`.
+# A run that fell back finishes green and keeps `label`'s error annotations, so the Anthropic
+# failure is still visible. Give the key a small credit limit on OpenRouter.
+# There is no keyword fallback: when both fail, only `user-report` is added and the run FAILS, so a
+# broken rule shows up as a red run instead of weeks of silently wrong labels.
+
+on:
+  issues:
+    types: [opened, reopened, edited]
+  workflow_dispatch:
+    inputs:
+      issues:
+        description: Issue numbers separated by spaces, or `unlabeled`.
+        required: true
+        type: string
+      dry_run:
+        description: Print the labels that would be added and change nothing.
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+concurrency:
+  group: issue-labels-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  label:
+    name: label issues
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      failed: ${{ steps.label.outputs.failed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            ci/label-issue.py
+          sparse-checkout-cone-mode: false
+      - name: Label
+        id: label
+        # A failure hands its issues to `fallback`; the check below fails the job when it did not.
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          ISSUE: ${{ github.event.issue.number }}
+          INPUT_ISSUES: ${{ inputs.issues }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
+            for n in $INPUT_ISSUES; do
+              case "$n" in
+                unlabeled) args+=(--unlabeled) ;;
+                *[!0-9]*|'') echo "not an issue number: $n" >&2; exit 1 ;;
+                *) args+=(--issue "$n") ;;
+              esac
+            done
+          else
+            args+=(--issue "$ISSUE")
+            [ "$ACTION" = "edited" ] && args+=(--only-if-unlabeled)
+          fi
+          python3 ci/label-issue.py "${args[@]}"
+      - name: Fail when no issue was handed to the fallback
+        # The script died before reporting which issues failed (e.g. a GitHub API error).
+        if: steps.label.outcome == 'failure' && steps.label.outputs.failed == ''
+        run: |
+          echo "::error::the labeler failed without naming its issues; see the Label step" >&2
+          exit 1
+
+  fallback:
+    name: label issues (OpenRouter fallback)
+    needs: label
+    if: needs.label.outputs.failed != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Holds OPENROUTER_API_KEY; its deployment-branch rule admits only the default branch.
+    environment: issue-labels
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            ci/label-issue.py
+          sparse-checkout-cone-mode: false
+      - name: Label through OpenRouter
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          FAILED: ${{ needs.label.outputs.failed }}
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(--provider openrouter)
+          [ "$EVENT" = "workflow_dispatch" ] && [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
+          for n in $FAILED; do
+            case "$n" in
+              *[!0-9]*|'') echo "not an issue number: $n" >&2; exit 1 ;;
+              *) args+=(--issue "$n") ;;
+            esac
+          done
+          python3 ci/label-issue.py "${args[@]}"

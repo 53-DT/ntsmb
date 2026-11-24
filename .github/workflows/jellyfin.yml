@@ -1,0 +1,76 @@
+name: Jellyfin
+
+# FinNative's own gate. `make check-cargo-unit-default` names upstream's crates only, so the
+# Jellyfin layer's tests (`plx_jellyfin`, which `make check` does not run) run here, in a workflow
+# of their own, and `ci.yml` stays byte for byte upstream's. A required-check rule must name this
+# workflow's check by hand to gate pull requests on it.
+
+on:
+  push:
+    branches: [main, 'release/v*']
+    paths:
+      - 'rust-modules/jellyfin/**'
+      - 'rust-modules/plex/**'
+      - 'rust-modules/base/**'
+      - 'rust-modules/os/**'
+      - 'rust-modules/net/**'
+      - 'rust-modules/Cargo.toml'
+      - 'rust-modules/Cargo.lock'
+      - 'rust-modules/rust-toolchain.toml'
+      - '.github/actions/**'
+      - '.github/workflows/jellyfin.yml'
+  pull_request:
+    paths:
+      - 'rust-modules/jellyfin/**'
+      - 'rust-modules/plex/**'
+      - 'rust-modules/base/**'
+      - 'rust-modules/os/**'
+      - 'rust-modules/net/**'
+      - 'rust-modules/Cargo.toml'
+      - 'rust-modules/Cargo.lock'
+      - 'rust-modules/rust-toolchain.toml'
+      - '.github/actions/**'
+      - '.github/workflows/jellyfin.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jellyfin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plx-jellyfin:
+    name: plx_jellyfin unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The Filmography's key (`plx_jellyfin::tmdb`), asked the request the app makes. A key TMDB
+      # refuses fails here, before a release ships it; no secret (a fork's pull request) or TMDB
+      # not answering is only noted. Nothing but the status is printed.
+      - name: The TMDB key answers
+        shell: bash
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: |
+          if [ -z "$TMDB_API_KEY" ]; then echo "::notice::no TMDB_API_KEY in this run"; exit 0; fi
+          status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
+            "https://api.themoviedb.org/3/person/31/combined_credits?api_key=$TMDB_API_KEY&language=en" || true)
+          echo "TMDB answered $status"
+          case "$status" in
+            200) ;;
+            401) echo "::error::TMDB refuses TMDB_API_KEY"; exit 1 ;;
+            *) echo "::warning::TMDB did not answer the key check ($status)" ;;
+          esac
+
+      # plx_jellyfin depends on plx_plex, plx_base, plx_os and plx_net only, none of which
+      # links SDL, so the desktop libraries are not installed.
+      - uses: ./.github/actions/host-rust
+        with:
+          sdl: "false"
+
+      - name: plx_jellyfin unit tests
+        shell: bash
+        run: cd rust-modules && cargo "+$RUST_TOOLCHAIN" test --lib -p plx_jellyfin
