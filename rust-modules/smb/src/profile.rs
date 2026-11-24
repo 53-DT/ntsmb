@@ -101,6 +101,50 @@ impl ConnectionProfile {
         Ok(())
     }
 
+    /// Seal a password with the platform credential store. Plaintext is never copied into the
+    /// profile or returned as a persistence fallback. A MemoryOnly platform must keep the
+    /// password in the live connection flow and ask again after the next launch.
+    pub fn protect_password(&mut self, password: &str) -> Result<(), String> {
+        if self.guest {
+            return Err("Guest connections do not use a password".into());
+        }
+        if plx_os::tv::secure::mode() == plx_os::tv::secure::StoreMode::MemoryOnly {
+            return Err("This device cannot securely save SMB credentials".into());
+        }
+        let sealed = plx_os::tv::secure::seal(password.as_bytes())
+            .ok_or_else(|| "The device could not securely protect the SMB password".to_string())?;
+        self.credential = Some(CredentialEnvelope {
+            backend: sealed.backend.as_str().to_owned(),
+            key: sealed.key,
+            iv: sealed.iv,
+            data: sealed.data,
+        });
+        Ok(())
+    }
+
+    /// Open the saved password only through the exact credential backend that sealed it.
+    /// Unknown backends and authentication failures are refused; ciphertext is never treated as
+    /// plaintext and never logged.
+    pub fn reveal_password(&self) -> Option<String> {
+        let envelope = self.credential.as_ref()?;
+        if envelope.backend != plx_os::tv::secure::Backend::KEYMANAGER3.as_str() {
+            return None;
+        }
+        let sealed = plx_os::tv::secure::Sealed {
+            backend: plx_os::tv::secure::Backend::KEYMANAGER3,
+            key: envelope.key.clone(),
+            iv: envelope.iv.clone(),
+            data: envelope.data.clone(),
+        };
+        let bytes = plx_os::tv::secure::open(&sealed)?;
+        String::from_utf8(bytes).ok()
+    }
+
+    /// Remove a saved credential envelope without affecting the connection metadata.
+    pub fn clear_password(&mut self) {
+        self.credential = None;
+    }
+
     /// Serialize only validated metadata and the opaque encrypted credential envelope.
     pub fn encode(&self) -> Result<String, String> {
         self.validate()?;
