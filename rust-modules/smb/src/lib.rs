@@ -14,6 +14,7 @@ pub mod playback;
 pub mod range_http;
 pub mod browser;
 pub mod profile;
+pub mod connect_form;
 
 use smb2::{FileReader, SmbClient, Tree};
 
