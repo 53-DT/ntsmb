@@ -401,6 +401,122 @@ pub struct SourceProbe {
     pub dovi: Option<(u8, u8, bool)>,
 }
 
+/// A seekable byte source used for local/custom-AVIO probes. Implementations must return
+/// at most `length` bytes and must not retain mutable cursor state; FFmpeg supplies offsets.
+pub trait ProbeSource: Send + Sync {
+    fn size(&self) -> u64;
+    fn read_at(&self, offset: u64, length: usize) -> Result<Vec<u8>, String>;
+}
+
+struct ProbeAvioState {
+    source: Arc<dyn ProbeSource>,
+    offset: std::sync::Mutex<u64>,
+}
+
+extern "C" fn probe_read_packet(opaque: *mut c_void, buffer: *mut u8, buffer_size: c_int) -> c_int {
+    if opaque.is_null() || buffer.is_null() || buffer_size <= 0 { return -5; }
+    let state = unsafe { &*(opaque as *const ProbeAvioState) };
+    let mut offset = match state.offset.lock() { Ok(v) => v, Err(e) => e.into_inner() };
+    if *offset >= state.source.size() { return 0; }
+    match state.source.read_at(*offset, buffer_size as usize) {
+        Ok(bytes) if bytes.is_empty() => 0,
+        Ok(bytes) => {
+            let count = bytes.len().min(buffer_size as usize);
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, count); }
+            *offset = offset.saturating_add(count as u64);
+            count as c_int
+        }
+        Err(_) => -5,
+    }
+}
+
+extern "C" fn probe_seek(opaque: *mut c_void, position: i64, whence: c_int) -> i64 {
+    if opaque.is_null() { return -5; }
+    let state = unsafe { &*(opaque as *const ProbeAvioState) };
+    if whence == AVSEEK_SIZE { return i64::try_from(state.source.size()).unwrap_or(i64::MAX); }
+    let base = match whence & 0xffff {
+        0 => 0i128,
+        1 => match state.offset.lock() { Ok(v) => *v as i128, Err(e) => *e.into_inner() as i128 },
+        2 => state.source.size() as i128,
+        _ => return -5,
+    };
+    let next = base + position as i128;
+    if next < 0 || next > state.source.size() as i128 { return -5; }
+    match state.offset.lock() {
+        Ok(mut v) => *v = next as u64,
+        Err(e) => *e.into_inner() = next as u64,
+    }
+    next as i64
+}
+
+/// Probe a seekable source using caller-owned AVIO callbacks. This keeps FFmpeg's network
+/// protocols disabled while allowing the SMB layer to supply authenticated random-access bytes.
+pub fn probe_source(source: Arc<dyn ProbeSource>) -> Result<SourceProbe, String> {
+    ensure_registered();
+    let mut state = Box::new(ProbeAvioState { source, offset: std::sync::Mutex::new(0) });
+    unsafe {
+        let buffer = av_malloc(64 * 1024) as *mut u8;
+        if buffer.is_null() { return Err("FFmpeg probe AVIO buffer allocation failed".into()); }
+        let avio = avio_alloc_context(
+            buffer, 64 * 1024, 0, &mut *state as *mut ProbeAvioState as *mut c_void,
+            Some(probe_read_packet), None, Some(probe_seek),
+        );
+        if avio.is_null() {
+            free_ptr(buffer as *mut c_void);
+            return Err("FFmpeg probe AVIO allocation failed".into());
+        }
+        let mut fmt = avformat_alloc_context();
+        if fmt.is_null() {
+            free_avio(avio);
+            return Err("FFmpeg format context allocation failed".into());
+        }
+        (*fmt).pb = avio;
+        let opened = avformat_open_input(&mut fmt, std::ptr::null(), std::ptr::null_mut(), std::ptr::null_mut());
+        if opened < 0 || fmt.is_null() {
+            if !fmt.is_null() { avformat_close_input(&mut fmt); }
+            free_avio(avio);
+            return Err(format!("FFmpeg could not open the SMB byte source ({opened})"));
+        }
+        let discovered = avformat_find_stream_info(fmt, std::ptr::null_mut());
+        if discovered < 0 {
+            avformat_close_input(&mut fmt);
+            free_avio(avio);
+            return Err(format!("FFmpeg could not inspect the SMB media streams ({discovered})"));
+        }
+        let mut video_codec = None;
+        let mut audio_codec = None;
+        let mut width = 0u16;
+        let mut height = 0u16;
+        let mut dovi = None;
+        let streams = (*fmt).streams;
+        for index in 0..(*fmt).nb_streams as usize {
+            let stream = *streams.add(index);
+            let params = stream_codecpar(stream);
+            match (*params).codec_type {
+                AVMEDIA_TYPE_VIDEO if video_codec.is_none() => {
+                    video_codec = Some(std::ffi::CStr::from_ptr(avcodec_get_name((*params).codec_id)).to_string_lossy().into_owned());
+                    width = u16::try_from((*params).width).unwrap_or(0);
+                    height = u16::try_from((*params).height).unwrap_or(0);
+                    dovi = dovi_conf(params).map(|dv| (dv.dv_profile, dv.dv_bl_signal_compatibility_id, dv.el_present_flag != 0));
+                }
+                AVMEDIA_TYPE_AUDIO if audio_codec.is_none() => {
+                    audio_codec = Some(std::ffi::CStr::from_ptr(avcodec_get_name((*params).codec_id)).to_string_lossy().into_owned());
+                }
+                _ => {}
+            }
+        }
+        let duration_us = fmt_duration(fmt);
+        avformat_close_input(&mut fmt);
+        free_avio(avio);
+        if video_codec.is_none() { return Err("The selected SMB file has no video stream".into()); }
+        Ok(SourceProbe {
+            video_codec, audio_codec, width, height,
+            duration_ns: u64::try_from(duration_us.max(0)).unwrap_or(0).saturating_mul(1_000),
+            dovi,
+        })
+    }
+}
+
 /// Probe a loopback URL using the bundled FFmpeg demuxers. The SMB browser supplies only the
 /// local HTTP Range URL created by RangeServer, so this FFmpeg-owned HTTP request never reaches a
 /// remote host and reads only the container metadata needed through the SMB bridge.
