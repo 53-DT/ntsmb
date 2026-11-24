@@ -1,6 +1,7 @@
 name: SMB development build
 
 # Builds the current development branch into a separately installable debug IPK for TV testing.
+# Keep this workflow path-triggered so SMB transport and diagnostic changes always produce a TV-testable package.
 
 on:
   push:
