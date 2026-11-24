@@ -14,7 +14,7 @@ The goal is to connect directly to SMB shares, browse folders and files with the
 
 ## Status
 
-**Work in progress.** The SMB backend and range-streaming foundation are being developed. The connection/settings UI, file browser, credential storage and end-to-end TV playback still need implementation and testing.
+**Work in progress.** The SMB transport and range-streaming foundation are in place, and browser helper logic (folder-first sorting, video filtering and safe relative navigation) has been added with unit tests. The actual TV browser screen, connection/settings UI, credential storage and end-to-end playback still need implementation and testing.
 
 Development branch: [`smb-development`](https://github.com/davetrump53-ai/ntsmb/tree/smb-development)
 
