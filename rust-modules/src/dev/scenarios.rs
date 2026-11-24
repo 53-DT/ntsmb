@@ -1221,6 +1221,39 @@ mod autoplay_arm_due_tests {
 }
 
 #[cfg(feature = "smb-smoke")]
+fn smb_playing_item(probe: &plx_play_feed::SourceProbe) -> plx_data::metadata::PlayingItem {
+    let subs = probe.subtitles.iter().map(|subtitle| plx_data::metadata::Stream {
+        // Stream IDs are local identities only; Feed selection uses the embedded ordinal below,
+        // never a Plex server request. Keep them positive and unique within this container.
+        id: i64::from(subtitle.stream_index).saturating_add(1).max(1),
+        index: i64::from(subtitle.stream_index),
+        lang_code: subtitle.language.clone(),
+        codec: subtitle.codec.clone(),
+        title: subtitle.title.clone(),
+        external: false,
+        ..Default::default()
+    }).collect();
+    plx_data::metadata::PlayingItem {
+        sid: plx_plex::plex::ServerId::from_raw(0),
+        rk: "smb-local".into(),
+        show_rk: String::new(),
+        kind: "movie".into(),
+        duration_ms: (probe.duration_ns > 0).then_some(probe.duration_ns / 1_000_000),
+        audio: Vec::new(),
+        subs,
+        video_fps: 0.0,
+        width: i64::from(probe.width),
+        height: i64::from(probe.height),
+        bitrate: 0,
+        video_kbps: 0,
+        dovi: Default::default(),
+        markers: Vec::new(),
+        chapters: Vec::new(),
+        hdr: false,
+    }
+}
+
+#[cfg(feature = "smb-smoke")]
 #[derive(serde::Deserialize)]
 struct SmbPlayTrigger {
     host: String,
@@ -1297,6 +1330,8 @@ fn smb_playback_arm(app: &mut App, fr: &mut Frame) -> bool {
     match result {
         Some(Ok(Ok(prepared))) => {
             app.scenarios.smb_worker = None;
+            let local_item = smb_playing_item(&prepared.probe);
+            let subtitle_count = local_item.subs.len();
             app.adapters.player.set_external_playback(prepared.play, prepared.bridge);
             plx_media::route::clear_url(&mut app.player.session);
             let started = crate::app::playback::start_playback(
@@ -1310,7 +1345,12 @@ fn smb_playback_arm(app: &mut App, fr: &mut Frame) -> bool {
                 &mut app.runtime.bridge(&mut app.bridge),
             );
             if started {
-                plx_base::eventlog::log("smb: handing the prepared file to the native player");
+                app.runtime.bridge(&mut app.bridge).metadata_run(
+                    plx_data::stores::metadata::MetadataCmd::InstallPlaying(Some(local_item)),
+                );
+                plx_base::eventlog::log(&format!(
+                    "smb: handing the prepared file to the native player; embedded subtitle tracks={subtitle_count}"
+                ));
             } else {
                 app.adapters.player.clear_external_playback();
                 plx_base::eventlog::log("smb: the native player refused the prepared file");
