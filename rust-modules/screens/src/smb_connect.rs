@@ -46,6 +46,7 @@ const REMOVE_BASE: u32 = 300;
 const FORM_GROUP: plx_machine::machine::GroupId = plx_machine::machine::GroupId(0);
 const PROFILE_GROUP: plx_machine::machine::GroupId = plx_machine::machine::GroupId(1);
 const GAP: f32 = theme::space::SM;
+const SHARE_TOP_PAD: f32 = 112.0;
 const FIELD_W: f32 = 720.0;
 
 pub const SHAPE: &str = "SmbConnectScreen{host_len:u32,port_len:u32,user_len:u32,password_len:u32,guest:bool,save:bool,editing:u32,connecting:bool,error:bool,shares:usize}";
@@ -180,26 +181,24 @@ impl SmbConnectScreen {
         if let Some(error) = self.controller.browser().error() { self.error = Some(error.to_owned()); }
         if self.save_pending && matches!(self.controller.phase(), Phase::PickShare | Phase::Browsing) {
             self.save_pending = false;
-            let profile_result = self.form.saved_profile();
-            match profile_result {
-                Ok(profile) => match self.saved.upsert(profile) {
-                    Ok(id) => { self.saved_id = Some(id); self.saved_view = false; if let Err(error) = self.saved.save() { self.error = Some(error); } else if self.saved.saved_temporarily() { self.error = Some("Saved in temporary TV storage; it may be lost after a TV restart".into()); } }
-                    Err(error) => { self.error = Some(format!("Connected, but could not save this server: {error}")); }
-                },
-                Err(error) => {
-                    // Keep the IP/username profile even if the TV's secure key manager refuses
-                    // password sealing. Never fall back to writing plaintext; ask for the password
-                    // next launch and make the missing password explicit in the UI.
-                    if self.form.save_connection {
-                        match self.form.validate().and_then(|request| self.saved.upsert(request.profile)) {
-                            Ok(id) => { self.saved_id = Some(id); self.saved_view = false;
-                                if let Err(save_error) = self.saved.save() { self.error = Some(save_error); }
-                                else { self.error = Some(format!("Server saved, but password could not be securely saved: {error}. Enter it again next launch.")); }
-                            }
-                            Err(save_error) => self.error = Some(format!("Connected, but could not save this server: {save_error}")),
-                        }
-                    } else { self.error = Some(format!("Connected, but could not save this server: {error}")); }
+            let result = self.form.validate().and_then(|request| {
+                let mut profile = request.profile;
+                let password = if profile.guest { None } else { Some(request.password().to_owned()) };
+                let fallback = if let Some(secret) = password.as_deref() {
+                    if profile.protect_password(secret).is_ok() { None } else { Some(secret.to_owned()) }
+                } else { None };
+                self.saved.upsert_with_password(profile, fallback)
+            });
+            match result {
+                Ok(id) => {
+                    self.saved_id = Some(id); self.saved_view = false;
+                    if let Err(error) = self.saved.save() { self.error = Some(error); }
+                    else if self.saved.saved_temporarily() { self.error = Some("Saved in temporary TV storage; it may be lost after a TV restart".into()); }
+                    else if !self.form.guest && self.saved.get(self.saved_id.as_deref().unwrap_or("")).is_some_and(|s| s.password.is_some()) {
+                        self.error = Some("Saved password in app-private storage because the TV secure key store is unavailable. This is less secure.".into());
+                    }
                 }
+                Err(error) => self.error = Some(format!("Connected, but could not save this server: {error}")),
             }
         }
         if let Some(id) = self.saved_id.clone() {
@@ -254,7 +253,7 @@ impl SmbConnectScreen {
         if field >= SHARE_BASE && field < SHARE_BASE+self.shares.len() as u32 && self.controller.phase()!=Phase::Browsing {
             let i=(field-SHARE_BASE) as usize;
             let base=Self::rect(HOST,measure)?;
-            return Some(Rect::new(base.x,base.y+i as f32*(FIELD_H+GAP),base.w,FIELD_H));
+            return Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+i as f32*(FIELD_H+GAP),base.w,FIELD_H));
         }
         if field == PROFILE { return Some(Self::profile_rect()); }
         if field == MENU_SAVED { return Some(Self::menu_rect(0)); }
@@ -319,7 +318,7 @@ impl SmbConnectScreen {
     }
     fn profile_rect() -> Rect { Rect::new(MARGIN_X, 24.0, 150.0, 54.0) }
     fn menu_rect(index: usize) -> Rect {
-        Rect::new(MARGIN_X, 88.0 + index as f32 * (FIELD_H + GAP), 300.0, FIELD_H)
+        Rect::new(SCR_W - MARGIN_X - 320.0, 88.0 + index as f32 * (FIELD_H + GAP), 300.0, FIELD_H)
     }
     fn draw_profile_controls(&self, p: plx_ui::Painter, measure: &dyn Measure, focus: Option<u32>) {
         let label = CString::new("⚙  Profile").unwrap();
@@ -430,7 +429,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
        self.host=TextBuffer::new(saved.profile.host.clone(),saved.profile.host.len());
        self.port=TextBuffer::new(saved.profile.port.to_string(),saved.profile.port.to_string().len());
        self.user=TextBuffer::new(saved.profile.username.clone(),saved.profile.username.len());
-       let password=saved.profile.reveal_password().unwrap_or_default();
+       let password=saved.profile.reveal_password().or_else(||saved.password.clone()).unwrap_or_default();
        self.password=TextBuffer::new(password.clone(),password.len());
        self.form.host=saved.profile.host.clone(); self.form.port=saved.profile.port.to_string();
        self.form.username=saved.profile.username.clone(); self.form.password=password;

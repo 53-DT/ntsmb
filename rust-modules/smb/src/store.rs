@@ -36,6 +36,9 @@ pub struct SavedConnection {
     /// What the list shows. Defaults to the host.
     pub name: String,
     pub profile: ConnectionProfile,
+    /// Password fallback for opted-in users when secure storage is unavailable. The UI warns when used.
+    #[serde(default)]
+    pub password: Option<String>,
     /// The folder (relative to the share root) the person was last in. Empty means the share root.
     #[serde(default)]
     pub last_path: String,
@@ -138,19 +141,24 @@ impl SavedStore {
     /// Add or replace the entry for this server and account, and make it the last used. Returns
     /// its id. The profile is validated first; a refused profile changes nothing.
     pub fn upsert(&mut self, profile: ConnectionProfile) -> Result<String, String> {
+        self.upsert_with_password(profile, None)
+    }
+
+    pub fn upsert_with_password(&mut self, profile: ConnectionProfile, password: Option<String>) -> Result<String, String> {
         profile.validate()?;
         let id = connection_id(&profile);
         if let Some(existing) = self.data.connections.iter_mut().find(|c| c.id == id) {
             // Keep the person's folder if they re-save the same server from the form.
             let keep_path = if existing.profile.share == profile.share { existing.last_path.clone() } else { String::new() };
             existing.profile = profile;
+            existing.password = password;
             existing.last_path = keep_path;
         } else {
             if self.data.connections.len() >= MAX_SAVED {
                 return Err("Too many saved servers. Remove one first.".into());
             }
             let name = profile.host.clone();
-            self.data.connections.push(SavedConnection { id: id.clone(), name, profile, last_path: String::new() });
+            self.data.connections.push(SavedConnection { id: id.clone(), name, profile, password, last_path: String::new() });
         }
         self.data.last_used = Some(id.clone());
         Ok(id)
@@ -325,8 +333,8 @@ mod tests {
             schema: STORE_SCHEMA,
             last_used: None,
             connections: vec![
-                SavedConnection { id: "bad".into(), name: "bad".into(), profile: bad, last_path: String::new() },
-                SavedConnection { id: connection_id(&good), name: "nas".into(), profile: good, last_path: String::new() },
+                SavedConnection { id: "bad".into(), name: "bad".into(), profile: bad, password: None, last_path: String::new() },
+                SavedConnection { id: connection_id(&good), name: "nas".into(), profile: good, password: None, last_path: String::new() },
             ],
         };
         fs::write(&file, serde_json::to_string(&data).unwrap()).unwrap();
