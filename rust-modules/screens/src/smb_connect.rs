@@ -493,7 +493,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   let Some(from)=self.stop_rect(key.elem,_cx.measure) else{return Step::Edge};
   let mut best:Option<(f32,u32)>=None;
   for candidate in ids.into_iter().filter(|id|*id!=key.elem) {
-   let Some(to)=Self::stop_rect(candidate,_cx.measure) else{continue};
+   let Some(to)=self.stop_rect(candidate,_cx.measure) else{continue};
    let (primary,orthogonal)=match dir {
     Dir::Up=>(from.y-(to.y+to.h),(from.cx()-to.cx()).abs()),
     Dir::Down=>(to.y-(from.y+from.h),(from.cx()-to.cx()).abs()),
@@ -524,7 +524,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   else if *elem>=SHARE_BASE {let i=(*elem-SHARE_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
   else if *elem==NEW_CONNECTION {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
   else if *elem==CHANGE_SERVER {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.shares.len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
-  else{Self::stop_rect(*elem,cx.measure)}?;
+  else{self.stop_rect(*elem,cx.measure)}?;
   Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(self.ids().iter().position(|e|e==elem).unwrap_or(0) as u32)})
  }
  fn reconcile(&self,want:FocusKey<u32>,_cx:&Cx<'_,H>)->FocusKey<u32>{if (want.elem==PROFILE && !self.menu_open && self.controller.phase()==Phase::Browsing && !self.rows.is_empty()) || self.ids().contains(&want.elem){want}else{FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}}}
