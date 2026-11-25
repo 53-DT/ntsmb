@@ -61,7 +61,22 @@ pub struct SmbConnectScreen {
 impl SmbConnectScreen {
     pub fn new(entry: EntryId) -> Self {
         let form = ConnectForm::new();
-        let saved = plx_smb::store::SavedStore::open(vec![plx_base::paths::persistent_state_root().join("ntsmb-connections.json")]);
+        // Mirror the app's durable per-install storage ordering: outside the app directory first
+        // (reinstall-safe), then the app directory, and /tmp only as a last-resort fallback.
+        let id = plx_base::paths::app_id();
+        let mut saved_paths = Vec::new();
+        if plx_base::paths::ENV_STEERABLE {
+            saved_paths.push(plx_base::paths::in_runtime_dir("ntsmb-connections.json"));
+        }
+        saved_paths.extend([
+            std::path::PathBuf::from(format!("/media/developer/{id}-ntsmb-connections.json")),
+            std::path::PathBuf::from(format!("/media/internal/.{id}-ntsmb-connections.json")),
+            plx_base::paths::in_app_dir("ntsmb-connections.json"),
+        ]);
+        if !plx_base::paths::ENV_STEERABLE {
+            saved_paths.push(plx_base::paths::in_runtime_dir("ntsmb-connections.json"));
+        }
+        let saved = plx_smb::store::SavedStore::open(saved_paths);
         let saved_view = !saved.connections().is_empty();
         Self {
             entry, host: TextBuffer::new(String::new(), 0),
