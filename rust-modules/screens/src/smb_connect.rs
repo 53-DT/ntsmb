@@ -2,7 +2,7 @@
 //!
 //! Credentials remain in this live screen/form and are sent only to the SMB worker.
 //! The logical digest records lengths only; password text is never serialized.
-use std::borrow::Cow;
+use std::{borrow::Cow, ffi::{CStr, CString}};
 use plx_machine::machine::{
     Canon, Cx, Delivery, Edge, Effects, EntryId, FocusKey, Handled, InputKind, Key,
     LogicalState, Machine, NavOp, Fx, TextEdit,
@@ -207,12 +207,13 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
  fn scrim(&self)->Scrim{Scrim::NONE}
  fn draw(&mut self,f:&mut DrawFrame<'_, '_,H>){
   let p=f.painter; let layout=RouteLayout::screen(); let measure=f.measure;
-  let mut title=String::from("Connect to SMB");
-  let body=if self.connecting{"Connecting to the SMB server…".to_owned()}
+  let title=CString::new("Connect to SMB").expect("static title");
+  let body=if self.connecting{"Connecting to the SMB server and loading shares…".to_owned()}
    else if let Some(error)=self.error.as_deref(){format!("Connection failed: {error}")}
    else if !self.shares.is_empty(){format!("Choose a share on {}.",self.form.host)}
    else{"Enter your server details to browse and play videos.".to_owned()};
-  layout.draw_narrative(p,None,&title,&body,measure);
+  let body=CString::new(body.replace('\0',"")).expect("SMB status contains no nul");
+  layout.draw_narrative(p,None,title.as_c_str(),body.as_c_str(),measure);
   let focus=f.focus.current.map(|k|k.elem);
   if !self.shares.is_empty(){
    for (i,share) in self.shares.iter().enumerate(){
@@ -224,12 +225,14 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
   let fields=[(HOST,"Server / IP",&self.host,false),(PORT,"Port",&self.port,false),(USER,"Username",&self.user,false),(PASSWORD,"Password",&self.password,true)];
   for (id,label,buffer,secret) in fields{
    if let Some(r)=Self::rect(id,measure){
-    TextField::new(label,buffer.text()).caret(buffer.caret()).secret(secret).hot(if focus==Some(id){1.0}else{0.0}).editing(self.editing==Some(id),true).draw(p,r,measure);
+    let label=CString::new(label).expect("static field label");
+    TextField::new(label.as_c_str(),buffer.text()).caret(buffer.caret()).secret(secret).hot(if focus==Some(id){1.0}else{0.0}).editing(self.editing==Some(id),true).draw(p,r,measure);
    }
   }
   for (id,label) in [(CONNECT,"Connect"),(GUEST,if self.form.guest{"Guest: On"}else{"Guest: Off"})]{
    if let Some(r)=Self::rect(id,measure){
-    Button::new(label.as_ptr() as *const std::ffi::c_char,theme::size::BODY,r).focused(focus==Some(id)).draw(&Env::inert(),p);
+    let label=CString::new(label).expect("static button label");
+    Button::new(label.as_ptr(),theme::size::BODY,r).focused(focus==Some(id)).draw(&Env::inert(),p);
    }
   }
  }
