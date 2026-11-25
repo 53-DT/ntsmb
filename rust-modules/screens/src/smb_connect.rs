@@ -41,8 +41,10 @@ pub struct SmbConnectScreen {
     user: TextBuffer,
     password: TextBuffer,
     editing: Option<u32>,
-    pub worker: SmbWorker,
+    pub controller: BrowseController,
     pub shares: Vec<plx_smb::ShareInfo>,
+    pub rows: Vec<plx_smb::browser::BrowserEntry>,
+    pub selected: usize,
     pub error: Option<String>,
     pub connecting: bool,
 }
@@ -54,8 +56,8 @@ impl SmbConnectScreen {
             port: TextBuffer::new(form.port.clone(), form.port.len()),
             user: TextBuffer::new(String::new(), 0),
             password: TextBuffer::new(String::new(), 0),
-            form, worker: SmbWorker::start().expect("SMB worker must start"),
-            shares: Vec::new(), error: None, connecting: false, editing: None,
+            form, controller: BrowseController::new(),
+            shares: Vec::new(), rows: Vec::new(), selected: 0, error: None, connecting: false, editing: None,
         }
     }
     fn buffer(&self, field: u32) -> &TextBuffer {
@@ -92,10 +94,10 @@ impl SmbConnectScreen {
     pub fn connect(&mut self) -> Result<(), String> {
         self.sync_form();
         let request = self.form.validate()?;
-        self.worker.connect(request)?;
+        self.controller.connect(request)?;
         self.connecting = true;
         self.error = None;
-        self.shares.clear();
+        self.shares.clear(); self.rows.clear(); self.selected = 0;
         Ok(())
     }
     pub fn poll(&mut self) -> Result<(), String> {
@@ -130,9 +132,7 @@ impl SmbConnectScreen {
         Some(if Self::field(field) { plx_ui::text_field::plate(r) } else { r })
     }
     fn ids(&self) -> Vec<u32> {
-        if !self.shares.is_empty() {
-            (0..self.shares.len()).map(|i| SHARE_BASE + i as u32).collect()
-        } else { vec![HOST, PORT, USER, PASSWORD, CONNECT, GUEST] }
+        if self.controller.phase()==Phase::Browsing { (0..self.rows.len()).map(|i| SHARE_BASE+i as u32).collect() } else if !self.shares.is_empty() { (0..self.shares.len()).map(|i| SHARE_BASE + i as u32).collect() } else { vec![HOST, PORT, USER, PASSWORD, CONNECT, GUEST] }
     }
 }
 impl LogicalState for SmbConnectScreen {
@@ -140,7 +140,7 @@ impl LogicalState for SmbConnectScreen {
   c.u32(self.host.text().len() as u32).u32(self.port.text().len() as u32)
    .u32(self.user.text().len() as u32).u32(self.password.text().len() as u32)
    .bool(self.form.guest).u32(self.editing.unwrap_or(0)).bool(self.connecting)
-   .bool(self.error.is_some()).seq(self.shares.len());
+   .bool(self.error.is_some()).seq(self.shares.len()).seq(self.rows.len()).u32(self.selected as u32);
  }
  fn probe(&self,out:&mut String){out.push_str("smb_connect");}
 }
