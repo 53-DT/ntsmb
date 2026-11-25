@@ -330,6 +330,10 @@ fn button_icon(act: Option<HudCommand>) -> Icon {
 /// measured). Its label is the command's app string for the playing item (`actions`); `focused` and
 /// `scale` are the section group's (the screen registers it while Info is open).
 pub(super) fn button(f: &Frame<'_>, q: Painter, e: &plx_ui::Env, c: &ControlRect, focused: bool, scale: f32) {
+    if c.act == Some(HudCommand::GoToDetail)
+        && f.meta.playing().is_some_and(|item| item.rk == "smb-local") {
+        return;
+    }
     let label = match c.act {
         Some(HudCommand::FromBeginning) => actions(f.meta)[0],
         Some(HudCommand::GoToDetail) => actions(f.meta)[1],

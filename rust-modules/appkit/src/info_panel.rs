@@ -45,7 +45,9 @@ fn is_episode(meta: metadata::MetadataView<'_>) -> bool {
 pub(crate) fn actions(meta: metadata::MetadataView<'_>) -> [&'static str; 2] {
     [
         plx_os::i18n::msg::widgets_info_from_beginning(),
-        if is_episode(meta) {
+        if meta.playing().is_some_and(|item| item.rk == "smb-local") {
+            ""
+        } else if is_episode(meta) {
             plx_os::i18n::msg::widgets_info_go_show()
         } else {
             plx_os::i18n::msg::widgets_info_go_movie()
