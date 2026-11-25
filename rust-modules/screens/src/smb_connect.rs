@@ -8,6 +8,11 @@ use plx_machine::machine::{
     LogicalState, Machine, NavOp, Fx, TextEdit, Host,
 };
 use plx_ui::frame::Budget;
+use plx_ui::cards::{CardSource, Grid, GridSpec, RowStyle, Tile, TileLabel};
+use plx_ui::widgets::Art;
+use plx_machine::machine::Measure;
+use plx_ui::label::{Label, HAlign};
+use plx_ui::consts::{CARD_H, CARD_W, MARGIN_X, SCR_W};
 use plx_ui::screen::{
     At, AxisMask, DrawFrame, EdgeRule, ElemKind, FocusSource, Focusable, GroupKind,
     GroupSpec, HitSource, Placed, RenderStrategy, Screen, ScreenEvent, Seat, Scrim, Step, Dir,
@@ -57,6 +62,26 @@ pub struct SmbConnectScreen {
     last_saved_path: String,
     saved_view: bool,
     resume_path: Option<String>,
+    browser_grid: Grid,
+}
+
+struct SmbCardSource<'a> { rows: &'a [plx_smb::browser::BrowserEntry] }
+impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
+ fn len(&self)->usize { self.rows.len() }
+ fn elem(&self,i:usize)->u32 { SHARE_BASE+i as u32 }
+ fn index_of(&self,e:&u32)->Option<usize> { e.checked_sub(SHARE_BASE).map(|i|i as usize).filter(|i|*i<self.rows.len()) }
+ fn art(&self,_i:usize)->Art<'_> { Art::Poster(None) }
+ fn label(&self,i:usize)->TileLabel {
+  let Some(row)=self.rows.get(i) else{return TileLabel::default()};
+  TileLabel { title:Some(CString::new(row.entry.name.as_str()).unwrap_or_default()), caption:Some(CString::new(if row.is_video{"Video"}else{"Folder"}).unwrap_or_default()), ..TileLabel::default() }
+ }
+ fn a11y_title(&self,i:usize)->Option<Cow<'_,str>> { self.rows.get(i).map(|r|Cow::Borrowed(r.entry.name.as_str())) }
+ fn overlay(&self,p:plx_ui::Painter,i:usize,tile:&Tile,_measure:&dyn Measure) {
+  let Some(row)=self.rows.get(i) else{return};
+  let glyph=CString::new(if row.is_video{"▶"}else{"📁"}).unwrap();
+  let frame=Rect::new(tile.rect.x,tile.rect.y+tile.rect.h*0.22,tile.rect.w,tile.rect.h*0.48);
+  Label::new(glyph.as_ptr(),96,if row.is_video{[0.88,0.91,0.96,1.0]}else{[0.98,0.72,0.25,1.0]}).h(HAlign::Center).draw(p,frame);
+ }
 }
 impl SmbConnectScreen {
     pub fn new(entry: EntryId) -> Self {
@@ -86,6 +111,7 @@ impl SmbConnectScreen {
             shares: Vec::new(), rows: Vec::new(), selected: 0, error: None, connecting: false, editing: None, playback: None,
             saved, save_pending: false, saved_id: None, last_saved_path: String::new(),
             saved_view, resume_path: None,
+            browser_grid: Grid::new(entry, GridSpec::resting(244.0).columns(6, RowStyle { gap: (SCR_W - 2.0 * MARGIN_X - 44.0 - 6.0 * CARD_W) / 5.0, ..RowStyle::HOME }, MARGIN_X)),
         }
     }
     fn buffer(&self, field: u32) -> &TextBuffer {
@@ -204,6 +230,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
  fn step(&mut self,ev:&Self::Ev,_cx:&Cx<'_,H>,fx:&mut Effects<'_,H>)->Handled {
   match ev {
    ScreenEvent::Tick(_)=>{
+    if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows}; let _=self.browser_grid.on(ev,_cx,&src,fx); }
     if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;}
     if let Some(rx)=self.playback.as_ref(){
      match rx.try_recv(){
@@ -275,7 +302,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
     }
     _=>Handled::No
    },
-   ScreenEvent::FocusMoved{to,..}=>{if self.editing.is_some_and(|e|e!=to.elem){self.set_editing(None,fx);} if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);self.selected=next;} Handled::Yes}
+   ScreenEvent::FocusMoved{to,..}=>{if self.controller.phase()==Phase::Browsing {let src=SmbCardSource{rows:&self.rows};let _=self.browser_grid.on(ev,_cx,&src,fx);} if self.editing.is_some_and(|e|e!=to.elem){self.set_editing(None,fx);} if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);self.selected=next;} Handled::Yes}
    ScreenEvent::WillLeave(_)|ScreenEvent::Cover|ScreenEvent::Suspend|ScreenEvent::Unmount=>{self.set_editing(None,fx);Handled::No}
    _=>Handled::No
   }
@@ -284,18 +311,22 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
 impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H> for SmbConnectScreen {
  fn groups(&self,cx:&Cx<'_,H>,out:&mut Vec<GroupSpec>){
   let ids=self.ids(); if ids.is_empty(){return;}
-  let extent=ids.iter().filter_map(|e| if *e>=SHARE_BASE {None}else{Self::stop_rect(*e,cx.measure)}).reduce(|a,b|a.union(b)).unwrap_or(Rect::FULL);
-  out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent,len:ids.len(),elem:ElemKind::Bare});
+  if self.controller.phase()==Phase::Browsing && !self.rows.is_empty() {
+   out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Grid{cols:6,holes:&[]},seat:Seat::Remembered,reachable:AxisMask::BOTH,edge:[EdgeRule::Geometric;4],extent:Rect::new(MARGIN_X,244.0,SCR_W-2.0*MARGIN_X,CARD_H),len:ids.len(),elem:ElemKind::Card});
+  } else {
+   let extent=ids.iter().filter_map(|e| if *e>=SHARE_BASE {None}else{Self::stop_rect(*e,cx.measure)}).reduce(|a,b|a.union(b)).unwrap_or(Rect::FULL);
+   out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent,len:ids.len(),elem:ElemKind::Bare});
+  }
  }
  fn group_of(&self,elem:&u32,_cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{self.ids().contains(elem).then_some(FORM_GROUP)}
  fn neighbour(&self,key:FocusKey<u32>,dir:Dir,_cx:&Cx<'_,H>)->Step<u32>{
+  if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.neighbour::<H,_>(&src,key,dir); }
   let ids=self.ids();let Some(i)=ids.iter().position(|e|*e==key.elem) else{return Step::Edge};
-  // The connect form and browser rows are vertically stacked. Do not let Right
-  // masquerade as Down; on TV remotes that makes the vertical list feel broken.
   let next=match dir{Dir::Up=>i.checked_sub(1),Dir::Down=>Some(i+1).filter(|n|*n<ids.len()),Dir::Left|Dir::Right=>None};
   next.map_or(Step::Edge,|n|Step::Move(FocusKey{entry:self.entry,elem:ids[n]}))
  }
- fn place(&self,elem:&u32,cx:&Cx<'_,H>,_at:At)->Option<Placed>{
+ fn place(&self,elem:&u32,cx:&Cx<'_,H>,at:At)->Option<Placed>{
+  if self.controller.phase()==Phase::Browsing && *elem>=SHARE_BASE { let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.place(cx,&src,elem,at); }
   let r=if *elem>=SAVED_BASE {let i=(*elem-SAVED_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
   else if *elem>=SHARE_BASE {let i=(*elem-SHARE_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
   else if *elem==NEW_CONNECTION {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}else{Self::stop_rect(*elem,cx.measure)}?;
@@ -334,11 +365,8 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
   }
   if self.controller.phase()==Phase::Browsing {
    layout.draw_narrative(p,None,"SMB Browser",&self.controller.location(),measure);
-   for (i,row) in self.rows.iter().enumerate(){
-    let id=SHARE_BASE+i as u32; let Some(r)=Self::rect(HOST,measure).map(|r|Rect::new(r.x,r.y+i as f32*(FIELD_H+GAP),r.w,FIELD_H)) else{continue};
-    let name=if row.is_video {format!("▶ {}",row.entry.name)} else {format!("📁 {}",row.entry.name)};
-    TextField::new(plx_os::i18n::msg::browse_jf_server_c(),&name).hot(if focus==Some(id){1.0}else{0.0}).draw(p,r,measure);
-   }
+   let src=SmbCardSource{rows:&self.rows};
+   self.browser_grid.draw(f,p.clipped(Rect::new(MARGIN_X,220.0,SCR_W-2.0*MARGIN_X,plx_ui::consts::SCR_H-220.0)),&src);
    return;
   }
   if !self.shares.is_empty(){
