@@ -6,8 +6,8 @@
 //!
 //! WHAT IT HOLDS. Only [`ConnectionProfile`] metadata (host, port, username, guest flag, share) and
 //! the opaque, already-encrypted credential envelope that `ConnectionProfile::protect_password`
-//! produced with the TV key manager. No plaintext password is ever serialised here, and nothing in
-//! this file logs a credential.
+//! produced with the TV key manager. Plaintext password fallbacks from older builds are discarded
+//! on load and are never written again. Nothing in this file logs a credential.
 //!
 //! WHERE IT LIVES. This crate deliberately does not know the application's paths. The caller hands
 //! in an ordered list of candidate file paths (see `docs/NT-SMB-NEXT-STEPS.md`, task 1) and the store
@@ -36,8 +36,9 @@ pub struct SavedConnection {
     /// What the list shows. Defaults to the host.
     pub name: String,
     pub profile: ConnectionProfile,
-    /// Password fallback for opted-in users when secure storage is unavailable. The UI warns when used.
-    #[serde(default)]
+    /// Legacy field read only to migrate older files that stored plaintext passwords.
+    /// It is cleared on load and deliberately omitted from every subsequent write.
+    #[serde(default, skip_serializing)]
     pub password: Option<String>,
     /// The folder (relative to the share root) the person was last in. Empty means the share root.
     #[serde(default)]
@@ -86,11 +87,13 @@ impl SavedStore {
     pub fn open_with_runtime(candidates: Vec<PathBuf>, runtime_dir: Option<PathBuf>) -> Self {
         let mut data = SavedFile::empty();
         let mut temporary = false;
+        let mut scrub_legacy_passwords = false;
         for path in &candidates {
             match fs::read_to_string(path) {
-                Ok(text) => match Self::parse(&text) {
-                    Some(parsed) => {
+                Ok(text) => match Self::parse_migrating(&text) {
+                    Some((parsed, had_plaintext_passwords)) => {
                         data = parsed;
+                        scrub_legacy_passwords = had_plaintext_passwords;
                         temporary = runtime_dir.as_deref().is_some_and(|runtime| path.parent() == Some(runtime));
                         break;
                     }
@@ -103,10 +106,20 @@ impl SavedStore {
                 Err(_) => continue,
             }
         }
-        Self { candidates, data, temporary: AtomicBool::new(temporary), runtime_dir }
+        let store = Self { candidates, data, temporary: AtomicBool::new(temporary), runtime_dir };
+        // Rewrite an older file immediately so its legacy plaintext password fields are removed
+        // even if the person does not edit or reconnect to any saved server.
+        if scrub_legacy_passwords {
+            let _ = store.save();
+        }
+        store
     }
 
     fn parse(text: &str) -> Option<SavedFile> {
+        Self::parse_migrating(text).map(|(file, _)| file)
+    }
+
+    fn parse_migrating(text: &str) -> Option<(SavedFile, bool)> {
         let mut file: SavedFile = serde_json::from_str(text).ok()?;
         if file.schema != STORE_SCHEMA {
             return None;
@@ -114,6 +127,10 @@ impl SavedStore {
         // One bad entry must not cost the person the good ones.
         file.connections.retain(|c| c.profile.validate().is_ok());
         file.connections.truncate(MAX_SAVED);
+        let had_plaintext_passwords = file.connections.iter().any(|c| c.password.is_some());
+        for connection in &mut file.connections {
+            connection.password = None;
+        }
         let last_is_known = match file.last_used.as_deref() {
             Some(last) => file.connections.iter().any(|c| c.id == last),
             None => true,
@@ -121,7 +138,7 @@ impl SavedStore {
         if !last_is_known {
             file.last_used = None;
         }
-        Some(file)
+        Some((file, had_plaintext_passwords))
     }
 
     pub fn connections(&self) -> &[SavedConnection] {
@@ -144,21 +161,23 @@ impl SavedStore {
         self.upsert_with_password(profile, None)
     }
 
-    pub fn upsert_with_password(&mut self, profile: ConnectionProfile, password: Option<String>) -> Result<String, String> {
+    /// Compatibility spelling retained for older callers. The password argument is intentionally
+    /// ignored: only the encrypted credential envelope on ConnectionProfile may be persisted.
+    pub fn upsert_with_password(&mut self, profile: ConnectionProfile, _password: Option<String>) -> Result<String, String> {
         profile.validate()?;
         let id = connection_id(&profile);
         if let Some(existing) = self.data.connections.iter_mut().find(|c| c.id == id) {
             // Keep the person's folder if they re-save the same server from the form.
             let keep_path = if existing.profile.share == profile.share { existing.last_path.clone() } else { String::new() };
             existing.profile = profile;
-            existing.password = password;
+            existing.password = None;
             existing.last_path = keep_path;
         } else {
             if self.data.connections.len() >= MAX_SAVED {
                 return Err("Too many saved servers. Remove one first.".into());
             }
             let name = profile.host.clone();
-            self.data.connections.push(SavedConnection { id: id.clone(), name, profile, password, last_path: String::new() });
+            self.data.connections.push(SavedConnection { id: id.clone(), name, profile, password: None, last_path: String::new() });
         }
         self.data.last_used = Some(id.clone());
         Ok(id)
@@ -297,15 +316,44 @@ mod tests {
     }
 
     #[test]
-    fn opted_in_password_fallback_survives_reopening_the_store() {
+    fn password_fallback_is_never_written_even_when_secure_storage_is_unavailable() {
         let dir = scratch("password-fallback");
         let file = dir.join("smb-connections.json");
         let mut store = SavedStore::open(vec![file.clone()]);
         let profile = ConnectionProfile::new("nas.local", 445, "viewer", false).unwrap();
         let id = store.upsert_with_password(profile, Some("test-password".into())).unwrap();
         store.save().unwrap();
+        let text = fs::read_to_string(&file).unwrap();
+        assert!(!text.contains("test-password"));
+        assert!(!text.to_lowercase().contains("\"password\""));
         let reopened = SavedStore::open(vec![file]);
-        assert_eq!(reopened.get(&id).and_then(|c| c.password.as_deref()), Some("test-password"));
+        assert!(reopened.get(&id).unwrap().password.is_none());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn legacy_plaintext_passwords_are_discarded_and_scrubbed_from_disk() {
+        let dir = scratch("legacy-password-migration");
+        let file = dir.join("smb-connections.json");
+        let profile = ConnectionProfile::new("nas.local", 445, "viewer", false).unwrap();
+        let id = connection_id(&profile);
+        let legacy = serde_json::json!({
+            "schema": STORE_SCHEMA,
+            "last_used": id,
+            "connections": [{
+                "id": id,
+                "name": "nas.local",
+                "profile": profile,
+                "password": "old-plaintext-secret",
+                "last_path": ""
+            }]
+        });
+        fs::write(&file, serde_json::to_string(&legacy).unwrap()).unwrap();
+        let reopened = SavedStore::open(vec![file.clone()]);
+        assert!(reopened.get(&connection_id(&ConnectionProfile::new("nas.local",445,"viewer",false).unwrap())).unwrap().password.is_none());
+        let text = fs::read_to_string(&file).unwrap();
+        assert!(!text.contains("old-plaintext-secret"));
+        assert!(!text.to_lowercase().contains("\"password\""));
         let _ = fs::remove_dir_all(dir);
     }
 

@@ -36,6 +36,7 @@ const SAVE: u32 = 16;
 const SHARE_BASE: u32 = 100;
 const SAVED_BASE: u32 = 0;
 const NEW_CONNECTION: u32 = 17;
+const REMOVE_CONNECTION: u32 = 20;
 const CHANGE_SERVER: u32 = 18;
 const PROFILE: u32 = 19;
 const FORM_GROUP: plx_machine::machine::GroupId = plx_machine::machine::GroupId(0);
@@ -69,6 +70,10 @@ pub struct SmbConnectScreen {
     saved_id: Option<String>,
     last_saved_path: String,
     saved_view: bool,
+    storage_warning: Option<String>,
+    exit_armed: bool,
+    saved_selection: Option<usize>,
+    remove_armed: bool,
     resume_path: Option<String>,
     browser_grid: Grid,
     saved_row: AvatarRow,
@@ -121,15 +126,17 @@ impl SmbConnectScreen {
         saved_paths.dedup();
         let saved = plx_smb::store::SavedStore::open_with_runtime(saved_paths, Some(plx_base::paths::runtime_dir().to_path_buf()));
         let saved_view = true;
+        let storage_warning = saved.saved_temporarily().then(|| "Connection details are stored in temporary TV storage and may be lost after a TV restart.".into());
+        let saved_selection = (!saved.connections().is_empty()).then_some(0);
         Self {
             entry, host: TextBuffer::new(String::new(), 0),
             port: TextBuffer::new(form.port.clone(), form.port.len()),
             user: TextBuffer::new(String::new(), 0),
             password: TextBuffer::new(String::new(), 0),
             form, controller: BrowseController::new(),
-            shares: Vec::new(), rows: Vec::new(), selected: 0, error: saved.saved_temporarily().then(|| "Saved in temporary TV storage; it may be lost after a TV restart".into()), connecting: false, editing: None, playback: None,
+            shares: Vec::new(), rows: Vec::new(), selected: 0, error: None, connecting: false, editing: None, playback: None,
             saved, save_pending: false, saved_id: None, last_saved_path: String::new(),
-            saved_view, resume_path: None,
+            saved_view, storage_warning, exit_armed: false, saved_selection, remove_armed: false, resume_path: None,
             browser_grid: Grid::new(entry, GridSpec::resting(324.0).columns(6, RowStyle { h: CARD_W * 0.75, under_tile: 16.0, gap: (SCR_W - 2.0 * MARGIN_X - 44.0 - 6.0 * CARD_W) / 5.0, ..RowStyle::HOME }, MARGIN_X)),
             saved_row: AvatarRow::new(),
         }
@@ -197,21 +204,29 @@ impl SmbConnectScreen {
         if let Some(error) = self.controller.browser().error() { self.error = Some(error.to_owned()); }
         if self.save_pending && matches!(self.controller.phase(), Phase::PickShare | Phase::Browsing) {
             self.save_pending = false;
+            let mut password_not_saved = false;
             let result = self.form.validate().and_then(|request| {
-                let password = if request.profile.guest { None } else { Some(request.password().to_owned()) };
                 let mut profile = request.profile;
-                let fallback = if let Some(secret) = password.as_deref() {
-                    if profile.protect_password(secret).is_ok() { None } else { Some(secret.to_owned()) }
-                } else { None };
-                self.saved.upsert_with_password(profile, fallback)
+                let secret = request.password();
+                if !profile.guest && !secret.is_empty() && profile.protect_password(secret).is_err() {
+                    // Never fall back to writing a plaintext password into the app data file.
+                    password_not_saved = true;
+                }
+                self.saved.upsert(profile)
             });
             match result {
                 Ok(id) => {
                     self.saved_id = Some(id); self.saved_view = false;
                     if let Err(error) = self.saved.save() { self.error = Some(error); }
-                    else if self.saved.saved_temporarily() { self.error = Some("Saved in temporary TV storage; it may be lost after a TV restart".into()); }
-                    else if !self.form.guest && self.saved.get(self.saved_id.as_deref().unwrap_or("")).is_some_and(|s| s.password.is_some()) {
-                        self.error = Some("Saved password in app-private storage because the TV secure key store is unavailable. This is less secure.".into());
+                    else {
+                        let mut warnings = Vec::new();
+                        if self.saved.saved_temporarily() {
+                            warnings.push("Connection details are stored in temporary TV storage and may be lost after a TV restart.");
+                        }
+                        if password_not_saved {
+                            warnings.push("The TV did not grant access to its secure key store. The connection is saved, but its password is not; enter it again when reconnecting.");
+                        }
+                        self.storage_warning = if warnings.is_empty() { None } else { Some(warnings.join(" ")) };
                     }
                 }
                 Err(error) => self.error = Some(format!("Connected, but could not save this server: {error}")),
@@ -250,9 +265,8 @@ impl SmbConnectScreen {
         }
     }
     fn stop_rect(&self, field: u32, measure: &dyn plx_machine::machine::Measure) -> Option<Rect> {
-        if field == NEW_CONNECTION {
-            let layout=RouteLayout::screen();
-            return Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H));
+        if field == NEW_CONNECTION || field == REMOVE_CONNECTION {
+            return Self::saved_footer_rect(field);
         }
         if field == CHANGE_SERVER {
             let base=Self::rect(HOST,measure)?;
@@ -306,11 +320,31 @@ impl SmbConnectScreen {
     }
     fn activate_element<H: Host>(&mut self, elem: u32, fx: &mut Effects<'_, H>) {
         match elem {
-            PROFILE => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=true; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
+            REMOVE_CONNECTION => {
+                if !self.remove_armed {
+                    self.remove_armed = true;
+                    self.error = Some("Press Remove again to confirm deleting the selected connection.".into());
+                } else if let Some(index) = self.saved_selection {
+                    if let Some(connection) = self.saved.connections().get(index) {
+                        let id = connection.id.clone();
+                        self.saved.remove(&id);
+                        self.saved_selection = if self.saved.connections().is_empty() { None } else { Some(index.min(self.saved.connections().len()-1)) };
+                        self.saved_id = None;
+                        self.remove_armed = false;
+                        self.error = None;
+                        if let Err(error) = self.saved.save() { self.error = Some(error); }
+                    }
+                } else {
+                    self.remove_armed = false;
+                    self.error = Some("Select a saved connection first.".into());
+                }
+                fx.invalidate(plx_machine::present::Provenance::Input);
+            }
+            PROFILE => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=true; self.exit_armed=false; self.remove_armed=false; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
             HOST|PORT|USER|PASSWORD => self.set_editing(if self.editing==Some(elem){None}else{Some(elem)},fx),
             GUEST => { self.form.guest=!self.form.guest; if self.form.guest { self.set_editing(None,fx); } fx.invalidate(plx_machine::present::Provenance::Input); }
             SAVE => { self.form.save_connection=!self.form.save_connection; fx.invalidate(plx_machine::present::Provenance::Input); }
-            NEW_CONNECTION => { self.saved_view=false; self.saved_id=None; self.error=None; self.host=TextBuffer::new(String::new(),0); self.port=TextBuffer::new("445".into(),3); self.user=TextBuffer::new(String::new(),0); self.password=TextBuffer::new(String::new(),0); self.form=ConnectForm::new(); self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
+            NEW_CONNECTION => { self.saved_view=false; self.saved_id=None; self.exit_armed=false; self.remove_armed=false; self.error=None; self.host=TextBuffer::new(String::new(),0); self.port=TextBuffer::new("445".into(),3); self.user=TextBuffer::new(String::new(),0); self.password=TextBuffer::new(String::new(),0); self.form=ConnectForm::new(); self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
             CHANGE_SERVER => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.selected=0; self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=true; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
             e if self.saved_view && (e as usize)<self.saved.connections().len() => {
                 let index=(e-SAVED_BASE) as usize;
@@ -318,7 +352,7 @@ impl SmbConnectScreen {
                     self.host=TextBuffer::new(saved.profile.host.clone(),saved.profile.host.len());
                     self.port=TextBuffer::new(saved.profile.port.to_string(),saved.profile.port.to_string().len());
                     self.user=TextBuffer::new(saved.profile.username.clone(),saved.profile.username.len());
-                    let password=saved.profile.reveal_password().or_else(||saved.password.clone()).unwrap_or_default();
+                    let password=saved.profile.reveal_password().unwrap_or_default();
                     self.password=TextBuffer::new(password.clone(),password.len());
                     self.form.host=saved.profile.host.clone(); self.form.port=saved.profile.port.to_string();
                     self.form.username=saved.profile.username.clone(); self.form.password=password;
@@ -345,7 +379,7 @@ impl SmbConnectScreen {
         } else if !self.shares.is_empty() {
             (0..self.shares.len()).map(|i| SHARE_BASE + i as u32).chain(std::iter::once(CHANGE_SERVER)).chain(std::iter::once(PROFILE)).collect()
         } else if self.saved_view {
-            (0..self.saved.connections().len()).map(|i| SAVED_BASE+i as u32).chain(std::iter::once(NEW_CONNECTION)).collect()
+            (0..self.saved.connections().len()).map(|i| SAVED_BASE+i as u32).chain([NEW_CONNECTION, REMOVE_CONNECTION]).collect()
         } else {
             vec![HOST, PORT, USER, PASSWORD, CONNECT, GUEST, SAVE, PROFILE]
         }
@@ -366,6 +400,14 @@ impl SmbConnectScreen {
         }
     }
     fn profile_rect() -> Rect { Rect::new(SCR_W as f32 - 300.0, 92.0, 250.0, FIELD_H) }
+    fn saved_footer_rect(elem: u32) -> Option<Rect> {
+        let width = 280.0;
+        let gap = 24.0;
+        let total = width * 2.0 + gap;
+        let x = (SCR_W as f32 - total) * 0.5;
+        let index = match elem { NEW_CONNECTION => 0.0, REMOVE_CONNECTION => 1.0, _ => return None };
+        Some(Rect::new(x + index * (width + gap), SAVED_FOOTER_Y, width, 60.0))
+    }
     fn draw_profile_controls(&self, p: plx_ui::Painter, measure: &dyn Measure, focus: Option<u32>) {
         let label = CString::new("Saved profiles").unwrap();
         let r = Rect::new(SCR_W as f32 - 300.0, 92.0, 250.0, FIELD_H);
@@ -378,7 +420,7 @@ impl LogicalState for SmbConnectScreen {
   c.u32(self.host.text().len() as u32).u32(self.port.text().len() as u32)
    .u32(self.user.text().len() as u32).u32(self.password.text().len() as u32)
    .bool(self.form.guest).bool(self.form.save_connection).u32(self.editing.unwrap_or(0)).bool(self.connecting)
-   .bool(self.error.is_some()).seq(self.shares.len()).seq(self.rows.len()).u32(self.selected as u32);
+   .bool(self.error.is_some()).bool(self.storage_warning.is_some()).bool(self.exit_armed).bool(self.remove_armed).seq(self.shares.len()).seq(self.rows.len()).u32(self.selected as u32);
  }
  fn probe(&self,out:&mut String){out.push_str("smb_connect");}
 }
@@ -431,26 +473,27 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
      if let Some(key)=_cx.focus.current {
       // The footer has immediate input paths below. Do not replay its deferred commit after
       // one of those paths has already left the picker.
-      if key.elem!=NEW_CONNECTION || self.saved_view { self.activate_element(key.elem,fx); }
+      if !(self.saved_view && matches!(key.elem,NEW_CONNECTION|REMOVE_CONNECTION)) { self.activate_element(key.elem,fx); }
      }
      Handled::Yes
     }
     ScreenEvent::Input(input)=>match &input.kind {
     // Pointer clicks carry their hit target directly; pointer focus need not move before commit.
-    InputKind::Click{hit:Some(elem),..} if self.saved_view && *elem==NEW_CONNECTION=>{
+    InputKind::Click{hit:Some(elem),..} if self.saved_view && matches!(*elem,NEW_CONNECTION|REMOVE_CONNECTION)=>{
      self.activate_element(*elem,fx);
      Handled::Yes
     }
     // Enter the footer on Magic Remote OK-down instead of depending on a deferred PressCommit
     // whose focus snapshot may still refer to the previous roster element.
     InputKind::Key{key:Key::Ok,edge:Edge::Down,..}
-     if self.saved_view && _cx.focus.current.is_some_and(|key|key.entry==self.entry && key.elem==NEW_CONNECTION)=>{
-     self.activate_element(NEW_CONNECTION,fx);
+     if self.saved_view && _cx.focus.current.is_some_and(|key|key.entry==self.entry && matches!(key.elem,NEW_CONNECTION|REMOVE_CONNECTION))=>{
+     if let Some(key)=_cx.focus.current { self.activate_element(key.elem,fx); }
      Handled::Yes
     }
     InputKind::SystemKeyboard(up)=>{if !*up {self.editing=None;} Handled::Yes}
     InputKind::Text(edit)=>{if let Some(field)=self.editing {self.buffer_mut(field).edit(edit);self.sync_form();fx.invalidate(plx_machine::present::Provenance::Input);} Handled::Yes}
     InputKind::Key{key,sym,edge,..} if *edge!=Edge::Up=>{
+      if *key!=Key::Back && self.exit_armed { self.exit_armed=false; }
       if let Some(field)=self.editing {
        let edit=match (*key,*sym) {(Key::Left,_)=>Some(TextEdit::Left),(Key::Right,_)=>Some(TextEdit::Right),(_,plx_ui::consts::SDLK_BACKSPACE)=>Some(TextEdit::Backspace),(_,plx_ui::consts::SDLK_CLEAR)=>Some(TextEdit::Clear),_=>None};
        if let Some(edit)=edit {self.buffer_mut(field).edit(&edit);self.sync_form();fx.invalidate(plx_machine::present::Provenance::Input);return Handled::Yes;}
@@ -458,11 +501,41 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
        if matches!(key,Key::Up|Key::Down){self.set_editing(None,fx);return Handled::No;}
        return Handled::Yes;
       }
-      if *key==Key::Back { if self.saved_view {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} else if self.controller.phase()==Phase::Browsing { match self.controller.go_back(){Back::Handled=>{self.error=None;self.connecting=true;},Back::Leave=>{self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=true;self.saved_id=None;self.error=None;} } Handled::Yes } else if !self.shares.is_empty() { self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=true;self.saved_id=None;self.error=None;fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes } else if !self.saved.connections().is_empty(){self.saved_view=true;self.error=self.saved.saved_temporarily().then(||"Saved in temporary TV storage; it may be lost after a TV restart".into());self.set_editing(None,fx);fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes} else {self.saved_view=true;self.set_editing(None,fx);fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes} } else if matches!(key,Key::Up|Key::Down|Key::Left|Key::Right) { Handled::No } else {Handled::No}
+      if *key==Key::Back {
+       if self.saved_view {
+        if self.exit_armed {
+         self.exit_armed=false;
+         fx.push(Fx::App(crate::registry::AppFx::Loop(crate::registry::LoopReq::BackAtRoot)));
+        } else {
+         self.exit_armed=true;
+         fx.invalidate(plx_machine::present::Provenance::Input);
+        }
+        Handled::Yes
+       } else if self.controller.phase()==Phase::Browsing {
+        match self.controller.go_back(){
+         Back::Handled=>{self.error=None;self.connecting=true;},
+         Back::Leave=>{self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=true;self.saved_id=None;self.exit_armed=false;self.error=None;}
+        }
+        Handled::Yes
+       } else if !self.shares.is_empty() {
+        self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=true;self.saved_id=None;self.exit_armed=false;self.error=None;fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes
+       } else {
+        self.saved_view=true;self.exit_armed=false;self.set_editing(None,fx);fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes
+       }
+      } else if matches!(key,Key::Up|Key::Down|Key::Left|Key::Right) { Handled::No } else {Handled::No}
     }
     _=>Handled::No
    },
-   ScreenEvent::FocusMoved{to,..}=>{if self.editing.is_some_and(|e|e!=to.elem){self.set_editing(None,fx);} if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);self.selected=next;} Handled::Yes}
+   ScreenEvent::FocusMoved{to,..}=>{
+    if self.editing.is_some_and(|e|e!=to.elem){self.set_editing(None,fx);}
+    if self.saved_view && (to.elem as usize)<self.saved.connections().len() {
+     self.saved_selection=Some(to.elem as usize);
+     self.remove_armed=false;
+    } else if to.elem!=REMOVE_CONNECTION { self.remove_armed=false; }
+    if self.exit_armed { self.exit_armed=false; }
+    if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);self.selected=next;}
+    Handled::Yes
+   }
    ScreenEvent::WillLeave(_)|ScreenEvent::Cover|ScreenEvent::Suspend|ScreenEvent::Unmount=>{self.set_editing(None,fx);Handled::No}
    _=>Handled::No
   }
@@ -473,8 +546,8 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   let ids=self.ids(); if ids.is_empty(){return;}
   if self.saved_view {
    if !self.saved.connections().is_empty() { Focusable::<H>::groups(&self.saved_shelf(),cx,out); }
-   let r=Rect::new((SCR_W as f32-420.0)*0.5,SAVED_FOOTER_Y,420.0,60.0);
-   out.push(GroupSpec{id:SAVED_FOOTER_GROUP,kind:GroupKind::Row{wrap:false},seat:Seat::First,reachable:AxisMask::VERTICAL,edge:[EdgeRule::Geometric,EdgeRule::Stop,EdgeRule::Stop,EdgeRule::Stop],extent:r,len:1,elem:ElemKind::Control});
+   let r=Rect::new((SCR_W as f32-584.0)*0.5,SAVED_FOOTER_Y,584.0,60.0);
+   out.push(GroupSpec{id:SAVED_FOOTER_GROUP,kind:GroupKind::Row{wrap:false},seat:Seat::First,reachable:AxisMask::VERTICAL,edge:[EdgeRule::Geometric,EdgeRule::Stop,EdgeRule::Stop,EdgeRule::Stop],extent:r,len:2,elem:ElemKind::Control});
    return;
   }
   if self.controller.phase()==Phase::Browsing && !self.rows.is_empty() {
@@ -485,9 +558,16 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent,len:ids.len(),elem:ElemKind::Bare});
   }
  }
- fn group_of(&self,elem:&u32,cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{if self.saved_view { if *elem==NEW_CONNECTION {Some(SAVED_FOOTER_GROUP)} else {Focusable::<H>::group_of(&self.saved_shelf(),elem,cx)} } else if self.controller.phase()==Phase::Browsing && !self.rows.is_empty() && *elem==PROFILE {Some(PROFILE_GROUP)} else {self.ids().contains(elem).then_some(FORM_GROUP)}}
+ fn group_of(&self,elem:&u32,cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{if self.saved_view { if matches!(*elem,NEW_CONNECTION|REMOVE_CONNECTION) {Some(SAVED_FOOTER_GROUP)} else {Focusable::<H>::group_of(&self.saved_shelf(),elem,cx)} } else if self.controller.phase()==Phase::Browsing && !self.rows.is_empty() && *elem==PROFILE {Some(PROFILE_GROUP)} else {self.ids().contains(elem).then_some(FORM_GROUP)}}
  fn neighbour(&self,key:FocusKey<u32>,dir:Dir,cx:&Cx<'_,H>)->Step<u32>{
-  if self.saved_view { if key.elem==NEW_CONNECTION {return Step::Edge;} return Focusable::<H>::neighbour(&self.saved_shelf(),key,dir,cx); }
+  if self.saved_view {
+   match (key.elem,dir) {
+    (NEW_CONNECTION,Dir::Right)=>return Step::Move(FocusKey{entry:self.entry,elem:REMOVE_CONNECTION}),
+    (REMOVE_CONNECTION,Dir::Left)=>return Step::Move(FocusKey{entry:self.entry,elem:NEW_CONNECTION}),
+    (NEW_CONNECTION|REMOVE_CONNECTION,_)=>return Step::Edge,
+    _=>return Focusable::<H>::neighbour(&self.saved_shelf(),key,dir,cx),
+   }
+  }
   if self.controller.phase()==Phase::Browsing {
    if key.elem==PROFILE { return if dir==Dir::Down && !self.rows.is_empty(){Step::Move(FocusKey{entry:self.entry,elem:SHARE_BASE})}else{Step::Edge}; }
    if key.elem>=SHARE_BASE && dir==Dir::Up && (key.elem-SHARE_BASE)<6 { return Step::Move(FocusKey{entry:self.entry,elem:PROFILE}); }
@@ -538,7 +618,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   best.map_or(Step::Edge,|(_,elem)|Step::Move(FocusKey{entry:self.entry,elem}))
  }
  fn place(&self,elem:&u32,cx:&Cx<'_,H>,at:At)->Option<Placed>{
-  if self.saved_view { if *elem==NEW_CONNECTION {let r=Rect::new((SCR_W as f32-420.0)*0.5,SAVED_FOOTER_Y,420.0,60.0);return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(0)});} return Focusable::<H>::place(&self.saved_shelf(),elem,cx,at); }
+  if self.saved_view { if matches!(*elem,NEW_CONNECTION|REMOVE_CONNECTION) {let r=Self::saved_footer_rect(*elem)?;return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(if *elem==NEW_CONNECTION{0}else{1})});} return Focusable::<H>::place(&self.saved_shelf(),elem,cx,at); }
   if *elem==PROFILE { let r=Self::profile_rect(); return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(0)}); }
   if self.controller.phase()==Phase::Browsing && *elem>=SHARE_BASE { let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.place(cx,&src,elem,at); }
   let r=if *elem>=SHARE_BASE && *elem<SHARE_BASE+self.shares.len() as u32 {let i=(*elem-SHARE_BASE) as usize;let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+i as f32*(FIELD_H+GAP),base.w,FIELD_H))}
@@ -547,7 +627,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   else{self.stop_rect(*elem,cx.measure)}?;
   Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(self.ids().iter().position(|e|e==elem).unwrap_or(0) as u32)})
  }
- fn reconcile(&self,want:FocusKey<u32>,cx:&Cx<'_,H>)->FocusKey<u32>{if self.saved_view { if want.elem==NEW_CONNECTION {want} else if self.saved.connections().is_empty(){FocusKey{entry:self.entry,elem:NEW_CONNECTION}} else {Focusable::<H>::reconcile(&self.saved_shelf(),want,cx)} } else if (want.elem==PROFILE && self.controller.phase()==Phase::Browsing && !self.rows.is_empty()) || self.ids().contains(&want.elem){want}else{FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}}}
+ fn reconcile(&self,want:FocusKey<u32>,cx:&Cx<'_,H>)->FocusKey<u32>{if self.saved_view { if matches!(want.elem,NEW_CONNECTION|REMOVE_CONNECTION) {want} else if self.saved.connections().is_empty(){FocusKey{entry:self.entry,elem:NEW_CONNECTION}} else {Focusable::<H>::reconcile(&self.saved_shelf(),want,cx)} } else if (want.elem==PROFILE && self.controller.phase()==Phase::Browsing && !self.rows.is_empty()) || self.ids().contains(&want.elem){want}else{FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}}}
  fn seat(&self,g:plx_machine::machine::GroupId,from:Placed,cx:&Cx<'_,H>)->FocusKey<u32>{
   if self.saved_view { if g==SAVED_FOOTER_GROUP {return FocusKey{entry:self.entry,elem:NEW_CONNECTION};} return Focusable::<H>::seat(&self.saved_shelf(),g,from,cx); }
   if g==PROFILE_GROUP { return FocusKey{entry:self.entry,elem:PROFILE}; }
@@ -573,41 +653,36 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
    layout.draw_narrative(p,None,"Connect to SMB",&body,measure);
   }
   if self.saved_view {
-   let help=self.error.as_deref().unwrap_or("Choose a saved server or add a new connection.");
+   let help=if self.exit_armed {"Press Back again to return to webOS Home."} else {self.error.as_deref().or(self.storage_warning.as_deref()).unwrap_or("Choose a saved server or add a new connection.")};
    layout.draw_narrative(p,None,"Who's watching?",help,measure);
    let users=self.saved.connections(); let n=users.len();
    let (start_x,slot)=Self::saved_row_geom(n); let scroll=self.saved_row.scroll_x();
    let extent=Rect::new(0.0,SAVED_ROW_Y,SCR_W as f32,AvatarRow::STYLE.h);
    let focused_i=focus.filter(|e|(*e as usize)<n).map(|e|e as usize);
+   let active_i=focused_i.or(self.saved_selection.filter(|i|*i<n));
    for (i,saved) in users.iter().enumerate() {
-    if focused_i==Some(i){continue;}
+    let active=active_i==Some(i);
     let cx=start_x+i as f32*slot+AvatarRow::STYLE.w*0.5-scroll;
     let base=Rect::new(cx-AvatarRow::STYLE.w*0.5,SAVED_ROW_Y,AvatarRow::STYLE.w,AvatarRow::STYLE.h);
     let key=FocusKey{entry:self.entry,elem:i as u32};
-    let rect=self.saved_row.draw(p,i,base,Art::Poster(None),false,measure,&f.press,&key);
+    let rect=self.saved_row.draw(p,i,base,Art::Poster(None),active,measure,&f.press,&key);
     let mark=CString::new("SMB").unwrap();
-    Label::new(mark.as_ptr(),46,theme::TEXT_PRIMARY).h(HAlign::Center).draw(p,Rect::new(rect.x,rect.y+rect.h*0.34,rect.w,48.0));
-    Self::draw_saved_name(p,&saved.name,cx,false,measure);
-    f.stop(p,Stop{key,rect,rest_rect:base,clip:extent,hover:plx_ui::screen::Hover::Focus,activate:plx_ui::screen::Activate::Press});
-   }
-   if let Some(i)=focused_i {
-    let saved=&users[i]; let cx=start_x+i as f32*slot+AvatarRow::STYLE.w*0.5-scroll;
-    let base=Rect::new(cx-AvatarRow::STYLE.w*0.5,SAVED_ROW_Y,AvatarRow::STYLE.w,AvatarRow::STYLE.h);
-    let key=FocusKey{entry:self.entry,elem:i as u32};
-    let rect=self.saved_row.draw(p,i,base,Art::Poster(None),true,measure,&f.press,&key);
-    let mark=CString::new("SMB").unwrap();
-    Label::new(mark.as_ptr(),46,theme::ACCENT_INK).h(HAlign::Center).draw(p,Rect::new(rect.x,rect.y+rect.h*0.34,rect.w,48.0));
-    Self::draw_saved_name(p,&saved.name,cx,true,measure);
+    Label::new(mark.as_ptr(),46,if active{theme::ACCENT_INK}else{theme::TEXT_PRIMARY}).h(HAlign::Center).draw(p,Rect::new(rect.x,rect.y+rect.h*0.34,rect.w,48.0));
+    Self::draw_saved_name(p,&saved.name,cx,active,measure);
     f.stop(p,Stop{key,rect,rest_rect:base,clip:extent,hover:plx_ui::screen::Hover::Focus,activate:plx_ui::screen::Activate::Press});
    }
    let add=CString::new("Add connection").unwrap();
-   let add_r=Rect::new((SCR_W as f32-420.0)*0.5,SAVED_FOOTER_Y,420.0,60.0);
+   let add_r=Self::saved_footer_rect(NEW_CONNECTION).unwrap();
    Button::new(add.as_ptr(),theme::size::BODY,add_r).focused(focus==Some(NEW_CONNECTION)).draw(&Env::inert(),p);
    f.stop(p,Stop{key:FocusKey{entry:self.entry,elem:NEW_CONNECTION},rect:add_r,rest_rect:add_r,clip:Rect::FULL,hover:plx_ui::screen::Hover::Focus,activate:plx_ui::screen::Activate::Press});
+   let remove=CString::new(if self.remove_armed{"Confirm remove"}else{"Remove selected"}).unwrap();
+   let remove_r=Self::saved_footer_rect(REMOVE_CONNECTION).unwrap();
+   Button::new(remove.as_ptr(),theme::size::BODY,remove_r).focused(focus==Some(REMOVE_CONNECTION)).draw(&Env::inert(),p);
+   f.stop(p,Stop{key:FocusKey{entry:self.entry,elem:REMOVE_CONNECTION},rect:remove_r,rest_rect:remove_r,clip:Rect::FULL,hover:plx_ui::screen::Hover::Focus,activate:plx_ui::screen::Activate::Press});
    return;
   }
   if self.controller.phase()==Phase::Browsing {
-   let browser_copy=self.error.as_deref().map(str::to_owned).unwrap_or_else(||self.controller.location());
+   let browser_copy=self.controller.location();
    layout.draw_narrative(p.translate(0.0, -self.browser_grid.scroll()),None,"SMB Browser",&browser_copy,measure);
    let src=SmbCardSource{rows:&self.rows};
    self.browser_grid.draw(f,p.clipped(Rect::new(MARGIN_X,300.0,SCR_W-2.0*MARGIN_X,plx_ui::consts::SCR_H-300.0)),&src);
