@@ -220,6 +220,19 @@ impl SmbConnectScreen {
             let i=(field-REMOVE_BASE) as usize; let layout=RouteLayout::screen();
             return Some(Rect::new(layout.content.x+540.0,layout.content.y+i as f32*(FIELD_H+GAP),150.0,FIELD_H));
         }
+        if field == NEW_CONNECTION {
+            let layout=RouteLayout::screen();
+            return Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H));
+        }
+        if field == CHANGE_SERVER {
+            let layout=RouteLayout::screen();
+            return Some(Rect::new(layout.content.x,layout.content.y+self.shares.len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H));
+        }
+        if field >= SHARE_BASE && field < SHARE_BASE+self.shares.len() as u32 && self.controller.phase()!=Phase::Browsing {
+            let i=(field-SHARE_BASE) as usize;
+            let base=Self::rect(HOST,measure)?;
+            return Some(Rect::new(base.x,base.y+i as f32*(FIELD_H+GAP),base.w,FIELD_H));
+        }
         if field == PROFILE { return Some(Self::profile_rect()); }
         if field == MENU_SAVED { return Some(Self::menu_rect(0)); }
         if field == MENU_ADD { return Some(Self::menu_rect(1)); }
