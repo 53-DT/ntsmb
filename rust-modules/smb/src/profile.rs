@@ -127,11 +127,8 @@ impl ConnectionProfile {
     /// plaintext and never logged.
     pub fn reveal_password(&self) -> Option<String> {
         let envelope = self.credential.as_ref()?;
-        if envelope.backend != plx_os::tv::secure::Backend::KEYMANAGER3.as_str() {
-            return None;
-        }
         let sealed = plx_os::tv::secure::Sealed {
-            backend: plx_os::tv::secure::Backend::KEYMANAGER3,
+            backend: plx_os::tv::secure::Backend::from_tag(envelope.backend.clone()),
             key: envelope.key.clone(),
             iv: envelope.iv.clone(),
             data: envelope.data.clone(),

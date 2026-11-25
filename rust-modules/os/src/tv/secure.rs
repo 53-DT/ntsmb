@@ -36,6 +36,16 @@ impl Backend {
         Self(Cow::Borrowed(tag))
     }
 
+    /// Reconstruct the backend tag stored with an application-owned credential envelope.
+    ///
+    /// Unlike legacy session migration, an SMB profile must ask the same platform backend that
+    /// originally sealed its password to open it. The tag is persisted data, not a closed enum:
+    /// keep unknown platform tags intact and let that platform's secure hook refuse them if it
+    /// does not recognise them.
+    pub fn from_tag(tag: String) -> Self {
+        Self(Cow::Owned(tag))
+    }
+
     /// The tag as stored.
     pub fn as_str(&self) -> &str {
         &self.0
