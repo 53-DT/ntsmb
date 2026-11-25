@@ -13,7 +13,7 @@ use plx_ui::geom;
 use plx_ui::widgets::Art;
 use plx_machine::machine::Measure;
 use plx_ui::label::{Label, HAlign};
-use plx_ui::consts::{CARD_H, CARD_W, MARGIN_X, SCR_W};
+use plx_ui::consts::{CARD_W, MARGIN_X, SCR_W};
 use plx_ui::screen::{
     At, AxisMask, DrawFrame, EdgeRule, ElemKind, Enter, FocusSource, Focusable, GroupKind,
     GroupSpec, HitSource, Placed, RenderStrategy, Screen, ScreenEvent, Seat, Scrim, Step, Dir,
@@ -93,10 +93,8 @@ impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
   if i / 6 != self.selected / 6 {
    let width=(tile.rect.w-20.0).max(1.0);
    let (fitted,_)=measure.fit_line_measured(&row.entry.name,width,theme::size::LABEL,false);
-   if let Ok(name)=CString::new(fitted) {
-    let band=Rect::new(tile.rect.x+10.0,tile.rect.y+tile.rect.h+8.0,width,28.0);
-    Label::new(name.as_ptr(),theme::size::LABEL,theme::TEXT_SECONDARY).h(HAlign::Center).draw(p,band);
-   }
+   let band=Rect::new(tile.rect.x+10.0,tile.rect.y+tile.rect.h+8.0,width,28.0);
+   Label::new(fitted.as_ptr(),theme::size::LABEL,theme::TEXT_SECONDARY).h(HAlign::Center).draw(p,band);
   }
  }
 }
