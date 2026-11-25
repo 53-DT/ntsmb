@@ -365,7 +365,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
     let saved_focus = if self.saved_view { focus.filter(|e| *e >= SAVED_BASE && (*e-SAVED_BASE) < self.saved.connections().len() as u32).map(|e| (e-SAVED_BASE) as usize) } else { None };
     self.saved_row.set_margin_x(Self::saved_row_geom(self.saved.connections().len()).0);
     self.saved_row.update(self.saved.connections().len(), saved_focus, t.dt());
-    if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;
+    if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;}
     if let Some(rx)=self.playback.as_ref(){
      match rx.try_recv(){
       Ok(Ok(prepared))=>{self.playback=None;self.connecting=false;fx.push(Fx::App(crate::registry::AppFx::SmbPlaybackReady(prepared)));}
