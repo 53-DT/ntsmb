@@ -17,7 +17,7 @@ use plx_ui::consts::{CARD_H, CARD_W, MARGIN_X, SCR_W};
 use plx_ui::screen::{
     At, AxisMask, DrawFrame, EdgeRule, ElemKind, Enter, FocusSource, Focusable, GroupKind,
     GroupSpec, HitSource, Placed, RenderStrategy, Screen, ScreenEvent, Seat, Scrim, Step, Dir,
-    TextEntry,
+    TextEntry, Stop,
 };
 use plx_ui::route_screen::RouteLayout;
 use plx_ui::text_buffer::TextBuffer;
@@ -187,8 +187,8 @@ impl SmbConnectScreen {
         if self.save_pending && matches!(self.controller.phase(), Phase::PickShare | Phase::Browsing) {
             self.save_pending = false;
             let result = self.form.validate().and_then(|request| {
+                let password = if request.profile.guest { None } else { Some(request.password().to_owned()) };
                 let mut profile = request.profile;
-                let password = if profile.guest { None } else { Some(request.password().to_owned()) };
                 let fallback = if let Some(secret) = password.as_deref() {
                     if profile.protect_password(secret).is_ok() { None } else { Some(secret.to_owned()) }
                 } else { None };
@@ -484,10 +484,10 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
    return Step::Move(FocusKey{entry:self.entry,elem});
   }
   let ids=self.ids();
-  let Some(from)=self.stop_rect(key.elem,_cx.measure) else{return Step::Edge};
+  let Some(from)=self.stop_rect(key.elem,cx.measure) else{return Step::Edge};
   let mut best:Option<(f32,u32)>=None;
   for candidate in ids.into_iter().filter(|id|*id!=key.elem) {
-   let Some(to)=self.stop_rect(candidate,_cx.measure) else{continue};
+   let Some(to)=self.stop_rect(candidate,cx.measure) else{continue};
    let (primary,orthogonal)=match dir {
     Dir::Up=>(from.y-(to.y+to.h),(from.cx()-to.cx()).abs()),
     Dir::Down=>(to.y-(from.y+from.h),(from.cx()-to.cx()).abs()),
@@ -544,7 +544,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
    let users=self.saved.connections(); let n=users.len();
    let (start_x,slot)=Self::saved_row_geom(n); let scroll=self.saved_row.scroll_x();
    let extent=Rect::new(0.0,SAVED_ROW_Y,SCR_W as f32,AvatarRow::STYLE.h);
-   let focused_i=focus.filter(|e|(*e as usize)<n).map(|e|*e as usize);
+   let focused_i=focus.filter(|e|(*e as usize)<n).map(|e|e as usize);
    for (i,saved) in users.iter().enumerate() {
     if focused_i==Some(i){continue;}
     let cx=start_x+i as f32*slot+AvatarRow::STYLE.w*0.5-scroll;
