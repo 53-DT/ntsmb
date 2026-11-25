@@ -337,7 +337,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  }
  fn reconcile(&self,want:FocusKey<u32>,_cx:&Cx<'_,H>)->FocusKey<u32>{if self.ids().contains(&want.elem){want}else{FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}}}
  fn seat(&self,_g:plx_machine::machine::GroupId,from:Placed,_cx:&Cx<'_,H>)->FocusKey<u32>{
-  if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows}; if let Some(key)=self.browser_grid.seat(&src,from){return key;} }
+  if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows}; if let Some(key)=self.browser_grid.seat::<H,SmbCardSource<'_>>(&src,from){return key;} }
   FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}
  }
 }
