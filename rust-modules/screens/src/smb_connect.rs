@@ -18,7 +18,7 @@ use plx_ui::text_buffer::TextBuffer;
 use plx_ui::text_field::{TextField, FIELD_H};
 use plx_ui::widgets::Button;
 use plx_ui::{theme, Env, Rect, View};
-use plx_smb::{connect_form::ConnectForm, controller::{BrowseController, Phase, Activation, Back}, browser::BrowserAction};
+use plx_smb::{connect_form::ConnectForm, controller::{BrowseController, Phase, Activation, Back}};
 
 const HOST: u32 = 10;
 const PORT: u32 = 11;
