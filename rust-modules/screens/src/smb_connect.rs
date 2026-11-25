@@ -49,7 +49,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
  fn step(&mut self,ev:&Self::Ev,_cx:&Cx<'_,H>,fx:&mut Effects<'_,H>)->Handled {
   match ev {
    ScreenEvent::Tick(_)=>{if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;} Handled::Yes}
-   ScreenEvent::Input(input)=>match input.kind {InputKind::Key{key:Key::Back,edge:Edge::Down,..}=>{fx.push(Fx::Nav(NavOp::Back));Handled::Yes},_=>Handled::No},
+   ScreenEvent::Input(input)=>match input.kind {InputKind::Key{key:Key::Back,edge:Edge::Down,..}=>{fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes},_=>Handled::No},
    _=>Handled::No
   }
  }
@@ -67,7 +67,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
  fn state(&self)->&dyn LogicalState{self}
  fn crumb(&self,_cx:&Cx<'_,H>)->Option<Cow<'_,str>>{None}
  fn prepare(&mut self,_b:&mut Budget,_cx:&Cx<'_,H>){}
- fn scrim(&self)->Scrim{Scrim::none()}
+ fn scrim(&self)->Scrim{Scrim::NONE}
  fn draw(&mut self,_f:&mut DrawFrame<'_, '_,H>){}
  fn render(&self)->RenderStrategy{RenderStrategy::Page}
  fn focus_source(&self)->FocusSource{FocusSource::Engine}
