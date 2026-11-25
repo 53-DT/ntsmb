@@ -408,7 +408,9 @@ impl PinStore {
                 Err(error) => last_error = Some(error),
             }
         }
-        Err(last_error.unwrap_or_else(|| "No writable app PIN storage path is available.".into()))
+        Err(last_error
+            .map(|error| format!("Could not write app PIN storage: {error}"))
+            .unwrap_or_else(|| "No writable app PIN storage path is available.".to_owned()))
     }
 }
 
