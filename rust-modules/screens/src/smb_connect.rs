@@ -18,7 +18,7 @@ use plx_ui::text_buffer::TextBuffer;
 use plx_ui::text_field::{TextField, FIELD_H};
 use plx_ui::widgets::Button;
 use plx_ui::{theme, Env, Rect, View};
-use plx_smb::{connect_form::ConnectForm, worker::{Event, SmbWorker}};
+use plx_smb::{connect_form::ConnectForm, controller::{BrowseController, Phase, Activation, Back}, browser::BrowserAction};
 
 const HOST: u32 = 10;
 const PORT: u32 = 11;
@@ -99,13 +99,13 @@ impl SmbConnectScreen {
         Ok(())
     }
     pub fn poll(&mut self) -> Result<(), String> {
-        while let Some(event) = self.worker.try_event()? {
-            match event {
-                Event::Shares(Ok(shares)) => { self.shares = shares; self.connecting = false; }
-                Event::Shares(Err(error)) => { self.error = Some(error); self.connecting = false; }
-                Event::Directory(_) | Event::Disconnected => {}
-            }
-        }
+        self.controller.pump();
+        self.shares = self.controller.shares().to_vec();
+        self.rows = self.controller.browser().entries().to_vec();
+        self.selected = self.controller.browser().selected();
+        self.connecting = matches!(self.controller.phase(), Phase::Connecting | Phase::OpeningShare) || self.controller.browser().is_loading();
+        if let Some(message) = self.controller.message() { self.error = Some(message.to_owned()); }
+        if let Some(error) = self.controller.browser().error() { self.error = Some(error.to_owned()); }
         Ok(())
     }
     fn rect(field: u32, measure: &dyn plx_machine::machine::Measure) -> Option<Rect> {
@@ -154,7 +154,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
      HOST|PORT|USER|PASSWORD => self.set_editing(if self.editing==Some(*elem){None}else{Some(*elem)},fx),
      GUEST => { self.form.guest=!self.form.guest; if self.form.guest { self.set_editing(None,fx); } fx.invalidate(plx_machine::present::Provenance::Input); }
      CONNECT => { self.set_editing(None,fx); if let Err(e)=self.connect(){self.error=Some(e);} }
-     e if e>=SHARE_BASE => { let i=(e-SHARE_BASE) as usize; if let Some(share)=self.shares.get(i){ if let Err(err)=self.worker.select_share(share.name.clone()){self.error=Some(err);} else {self.connecting=true; self.error=None;} } }
+     e if e>=SHARE_BASE && !self.shares.is_empty() && self.controller.phase()!=Phase::Browsing => { let i=(e-SHARE_BASE) as usize; if let Some(share)=self.shares.get(i){ self.controller.select_share(&share.name); self.connecting=true; self.error=None; } }\n     e if e>=SHARE_BASE && self.controller.phase()==Phase::Browsing => { let i=(e-SHARE_BASE) as usize; self.selected=i; match self.controller.activate(){ Activation::None=>{}, Activation::Play(_play)=>{self.error=Some("Playback handoff is being integrated. Browsing is active.".into());} } }
      _=>{}
     }
     Handled::Yes
@@ -170,7 +170,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
        if matches!(key,Key::Up|Key::Down){self.set_editing(None,fx);return Handled::No;}
        return Handled::Yes;
       }
-      if *key==Key::Back {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} else {Handled::No}
+      if *key==Key::Back { if self.controller.phase()==Phase::Browsing { match self.controller.go_back(){Back::Handled=>{self.error=None;self.connecting=true;},Back::Leave=>{self.shares.clear();self.rows.clear();self.connecting=false;} } Handled::Yes } else {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} } else if *key==Key::Up||*key==Key::Down { if self.controller.phase()==Phase::Browsing { self.controller.move_selection(if *key==Key::Up{-1}else{1}); self.selected=self.controller.browser().selected(); fx.invalidate(plx_machine::present::Provenance::Input); Handled::Yes } else {Handled::No} } else {Handled::No}
     }
     _=>Handled::No
    },
@@ -217,7 +217,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
   if !self.shares.is_empty(){
    for (i,share) in self.shares.iter().enumerate(){
     let id=SHARE_BASE+i as u32; let Some(r)=Self::rect(HOST,measure).map(|r|Rect::new(r.x,r.y+i as f32*(FIELD_H+GAP),r.w,FIELD_H)) else{continue};
-    TextField::new(plx_os::i18n::msg::browse_jf_server_c(),&share.name).hot(if focus==Some(id){1.0}else{0.0}).draw(p,r,measure);
+    TextField::new(plx_os::i18n::msg::browse_jf_server_c(),&name).hot(if focus==Some(id){1.0}else{0.0}).draw(p,r,measure);
    }
    return;
   }
