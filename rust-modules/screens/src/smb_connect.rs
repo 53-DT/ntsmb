@@ -211,7 +211,7 @@ impl SmbConnectScreen {
             _ => None,
         }
     }
-    fn stop_rect(field: u32, measure: &dyn plx_machine::machine::Measure) -> Option<Rect> {
+    fn stop_rect(&self, field: u32, measure: &dyn plx_machine::machine::Measure) -> Option<Rect> {
         if field >= SAVED_BASE && field < REMOVE_BASE {
             let i=(field-SAVED_BASE) as usize; let layout=RouteLayout::screen();
             return Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),520.0,FIELD_H));
@@ -453,7 +453,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Grid{cols:6,holes:&[]},seat:Seat::Remembered,reachable:AxisMask::BOTH,edge:[EdgeRule::Geometric;4],extent:Rect::new(MARGIN_X,324.0,SCR_W-2.0*MARGIN_X,CARD_H),len:self.rows.len(),elem:ElemKind::Card});
    out.push(GroupSpec{id:PROFILE_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent:Self::profile_rect(),len:1,elem:ElemKind::Bare});
   } else {
-   let extent=ids.iter().filter_map(|e|Self::stop_rect(*e,cx.measure)).reduce(|a,b|a.union(b)).unwrap_or(Rect::FULL);
+   let extent=ids.iter().filter_map(|e|self.stop_rect(*e,cx.measure)).reduce(|a,b|a.union(b)).unwrap_or(Rect::FULL);
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent,len:ids.len(),elem:ElemKind::Bare});
   }
  }
