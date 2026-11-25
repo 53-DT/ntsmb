@@ -98,7 +98,7 @@ pub(super) fn text_of(f: &Frame<'_>, bind: &str) -> Option<String> {
     match bind {
         "title.main" => Some(f.meta.now_playing().filter(|n| n.is_real_episode).map_or_else(|| words(plx_media::route::title_cptr(f.ps)), |n| n.title.clone())),
         "title.kicker" => Some(f.meta.now_playing().filter(|n| n.is_real_episode).map_or_else(|| words(plx_media::route::ctxline_cptr(f.ps)), |n| plx_ui::fmt::episode_kicker(n.season, n.index, &n.ep_title))),
-        "info.title" => info_content(f.meta).map(|c| c.title),
+        "info.title" => Some(info_content(f.meta).map(|c| c.title).filter(|title| !title.trim().is_empty()).unwrap_or_else(|| words(plx_media::route::title_cptr(f.ps)))),
         "info.summary" => info_content(f.meta).map(|c| c.summary),
         "label.info" => tab_labels(false)[0].map(str::to_owned),
         "label.chapters" => tab_labels(true)[1].map(str::to_owned),

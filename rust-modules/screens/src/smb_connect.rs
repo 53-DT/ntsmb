@@ -21,7 +21,7 @@ use plx_ui::screen::{
 use plx_ui::route_screen::RouteLayout;
 use plx_ui::text_buffer::TextBuffer;
 use plx_ui::text_field::{TextField, FIELD_H};
-use plx_ui::widgets::{Button, CtlPop};
+use plx_ui::widgets::{Button, CtlPop, ProfileChipRead, profile_chip_text, profile_chip_with};
 use plx_ui::{theme, Env, Rect, View};
 use plx_smb::{connect_form::ConnectForm, controller::{BrowseController, Phase, Activation, Back}};
 
@@ -316,14 +316,17 @@ impl SmbConnectScreen {
             vec![HOST, PORT, USER, PASSWORD, CONNECT, GUEST, SAVE, PROFILE]
         }
     }
-    fn profile_rect() -> Rect { Rect::new(MARGIN_X, 24.0, 150.0, 54.0) }
+    fn profile_rect() -> Rect { plx_ui::widgets::CHIP_FRAME }
     fn menu_rect(index: usize) -> Rect {
         Rect::new(SCR_W - MARGIN_X - 320.0, 88.0 + index as f32 * (FIELD_H + GAP), 300.0, FIELD_H)
     }
     fn draw_profile_controls(&self, p: plx_ui::Painter, measure: &dyn Measure, focus: Option<u32>) {
-        let label = CString::new("⚙  Profile").unwrap();
-        Button::new(label.as_ptr(), theme::size::BODY, Self::profile_rect())
-            .focused(focus == Some(PROFILE)).scale(1.0 + self.profile_pop.focus(0) * 0.08).draw(&Env::inert(), p);
+        let server_label = self.host.text().trim().to_owned();
+        let label = if server_label.is_empty() { "SMB".to_owned() } else { server_label };
+        let initial = label.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_else(|| "S".to_owned());
+        let (initial_c, name_c, name_w) = profile_chip_text(&label, &initial, 320.0, measure);
+        let profile = ProfileChipRead { src: 0, thumb: "", initial: initial_c.as_c_str(), name: name_c.as_c_str(), name_w };
+        profile_chip_with(p, profile, self.profile_pop.focus(0), None);
         if self.menu_open {
             for (i, (id, title)) in [
                 (MENU_SAVED, "Saved IPs"),
@@ -619,7 +622,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
     layout.draw_narrative(p,None,"SMB Shares","Select a share to browse its folders.",measure);
    }
    for (i,share) in self.shares.iter().enumerate(){
-    let id=SHARE_BASE+i as u32; let Some(r)=Self::rect(HOST,measure).map(|r|Rect::new(r.x,r.y+i as f32*(FIELD_H+GAP),r.w,FIELD_H)) else{continue};
+    let id=SHARE_BASE+i as u32; let Some(r)=Self::rect(HOST,measure).map(|r|Rect::new(r.x,r.y+SHARE_TOP_PAD+i as f32*(FIELD_H+GAP),r.w,FIELD_H)) else{continue};
     TextField::new(plx_os::i18n::msg::browse_jf_server_c(),&share.name).hot(if focus==Some(id){1.0}else{0.0}).draw(p,r,measure);
    }
    let share_base=Self::rect(HOST,measure).unwrap_or(layout.content);
