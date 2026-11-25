@@ -2105,6 +2105,8 @@ pub enum AppArg {
     /// The Collection page's summary sheet — the About panel over `collection::current()`. **It
     /// carries nothing**, for `PersonBio`'s reasons.
     CollectionAbout,
+    /// NT-SMB connection screen.
+    SmbConnect,
     /// plex.tv sign-in (QR) — shown when there is no usable session.
     Login,
     /// The "who's watching" Plex Home picker.
@@ -2170,6 +2172,7 @@ impl AppArg {
     pub fn route_probe(&self) -> RouteProbe {
         use ProbeKind::*;
         let (word, kind) = match self {
+            Self::SmbConnect => ("smb-connect", Login),
             Self::Login => ("login", Login),
             Self::Profiles => ("profiles", Profiles),
             Self::Onboard => ("onboard", Onboard),
@@ -2200,7 +2203,7 @@ impl AppArg {
     }
 }
 
-pub const ARG_SHAPE: &str = "AppArg{Login,Profiles,Onboard,Home,Library,LibraryCollections{section:u32},LibraryRecommended{section:u32},Search,Watchlist,Player,Content:{Detail{sid:u32,rk:str},Person{sid:u32,key:str,guid:str,name:str,thumb:str},Filmography{sid:u32,key:str},Collection{sid:u32,rk:str,sec:i64,tag:i64,name:str},Catalog{hex:str}},Settings:SettingsPage{Root,Playback,AudioSubtitles,Favourites,LibraryFavourites,Privacy,Legal,About,Document(u8),Preview(u8),ConsentStage(u8),Language,Contribute},FirstRunConsent(u8),LibraryMenu{host:u32,target:{epoch:u32,sid:u32,section:u64},kind:u32,anchor:[u32;4]},\
+pub const ARG_SHAPE: &str = "AppArg{SmbConnect,Login,Profiles,Onboard,Home,Library,LibraryCollections{section:u32},LibraryRecommended{section:u32},Search,Watchlist,Player,Content:{Detail{sid:u32,rk:str},Person{sid:u32,key:str,guid:str,name:str,thumb:str},Filmography{sid:u32,key:str},Collection{sid:u32,rk:str,sec:i64,tag:i64,name:str},Catalog{hex:str}},Settings:SettingsPage{Root,Playback,AudioSubtitles,Favourites,LibraryFavourites,Privacy,Legal,About,Document(u8),Preview(u8),ConsentStage(u8),Language,Contribute},FirstRunConsent(u8),LibraryMenu{host:u32,target:{epoch:u32,sid:u32,section:u64},kind:u32,anchor:[u32;4]},\
      PlayerOverlay{Tracks(tab:i32),Info,Chapters,More(page:u8)},\
      AltSources{host:u32,sid:u32,rk:str,anchor:[u32;4]},\
      VersionsPanel{host:u32,sid:u32,rk:str,anchor:[u32;4]},\
@@ -2215,7 +2218,7 @@ pub const ARG_SHAPE: &str = "AppArg{Login,Profiles,Onboard,Home,Library,LibraryC
 pub fn every_page_arg() -> Vec<AppArg> {
     let sid = plx_plex::plex::ServerId::UNSET;
     vec![
-        AppArg::Login, AppArg::Profiles, AppArg::Onboard, AppArg::Home, AppArg::Library,
+        AppArg::SmbConnect, AppArg::Login, AppArg::Profiles, AppArg::Onboard, AppArg::Home, AppArg::Library,
         AppArg::LibraryCollections { section: 0 }, AppArg::LibraryRecommended { section: 0 },
         AppArg::Content(ContentArg::Detail { sid, rk: String::new() }),
         AppArg::Content(ContentArg::Person {
@@ -2254,6 +2257,7 @@ impl LogicalState for AppArg {
             // then the route's own — so a recording taken before the fold and one taken after are
             // byte-comparable at every page frame. Only the SHAPE STRING moved, which is what the
             // fixtures are re-recorded for.
+            Self::SmbConnect => { c.u32(0).u32(14); }
             Self::Login => { c.u32(0).u32(0); }
             Self::Profiles => { c.u32(0).u32(1); }
             Self::Onboard => { c.u32(0).u32(2); }
@@ -2285,7 +2289,8 @@ impl plx_ui::screen::ScreenArg for AppArg {
             AppArg::Home | AppArg::Library | AppArg::Search | AppArg::Watchlist => Chrome::TabBar,
             // The two sub-pages of a library keep the bar, as the Library they are pushed over.
             AppArg::LibraryCollections { .. } | AppArg::LibraryRecommended { .. } => Chrome::TabBar,
-            AppArg::Login
+            AppArg::SmbConnect
+            | AppArg::Login
             | AppArg::Profiles
             | AppArg::Onboard
             | AppArg::Player
@@ -2335,6 +2340,7 @@ impl plx_ui::screen::ScreenArg for AppArg {
             // screen's identity in a recorded state and in `same_instance`, so they are allocated
             // forward and a fold may not renumber them. 5 and 6 are vacant (the two popover routes
             // phase 10 deleted); 8 and 9 belong to Detail and Person, which mount from `Content`.
+            AppArg::SmbConnect => 31,
             AppArg::Login => 1,
             AppArg::Profiles => 2,
             AppArg::Onboard => 3,
@@ -2542,6 +2548,7 @@ where
             // every remaining `app::input`/`app::run` call site drop its own `enter()`-equivalent
             // reset (see `input::enter_profiles_from_onboard`'s doc for the same argument made
             // about `screens::onboard` in 5b).
+            AppArg::SmbConnect => Box::new(crate::smb_connect::SmbConnectScreen::new(entry)),
             AppArg::Login => Box::new(crate::login::LoginScreen::new(entry, H::auth(cx))),
             AppArg::Profiles => {
                 let screen = crate::profiles::ProfilesScreen::new(entry, H::auth(cx));
@@ -2785,6 +2792,7 @@ pub const SCREEN_SHAPES: &[&str] = &[
     crate::watchlist::menu::SHAPE,
     crate::catalog::CatalogScreen::SHAPE,
     crate::versions_panel::SHAPE,
+    crate::smb_connect::SHAPE,
 ];
 
 /// The pin over [`SCREEN_SHAPES`] — bump it in the same edit that adds an entry, and say why.

@@ -30,6 +30,7 @@ pub mod home;
 pub mod item_menu;
 pub mod library;
 pub mod search;
+pub mod smb_connect;
 pub mod family;
 pub mod legal;
 pub mod login;

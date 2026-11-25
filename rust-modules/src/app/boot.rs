@@ -516,6 +516,7 @@ pub(crate) fn direct_trigger_server() -> Result<plx_plex::plex::ServerId, String
 /// Which screen the boot gate landed on — see the gate itself in `boot`, which is where the
 /// order of its four cases is argued.
 pub(crate) enum BootTo {
+    SmbConnect,
     Home,
     Login,
     Profiles,
@@ -1087,7 +1088,8 @@ pub(crate) unsafe fn construct(
     };
     // Controlled Home constructs its App before executing the same bootstrap command path.
     let boot_to = if controlled { BootTo::Home } else {
-        activate_session(&mut bridge, &mut pages, &mut super::recorder::Recplay::Off)
+        // NT-SMB owns startup; bypass Plex/Jellyfin session activation.
+        BootTo::SmbConnect
     };
     if !controlled {
         (platform.media.early_init)(&mt); // every backend set: the platform's boot facts (webOS: the plane owner's)
@@ -1419,6 +1421,7 @@ pub(crate) unsafe fn construct(
     // the loop's first frame either way, and the route below is a page underneath it.
     let mut owes_consent_question = false;
     let route = match boot_to {
+        BootTo::SmbConnect => AppArg::SmbConnect,
         // **Both Home arms ask, and the shared call is the point.** This is the one boot that
         // has no earlier hook — an install already signed in, either never asked or asked
         // against an older policy — and the sign-in's question has to come before every
