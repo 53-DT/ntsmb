@@ -421,7 +421,8 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
    return;
   }
   if self.controller.phase()==Phase::Browsing {
-   layout.draw_narrative(p,None,"SMB Browser",&self.controller.location(),measure);
+   let browser_copy=self.error.as_deref().map(str::to_owned).unwrap_or_else(||self.controller.location());
+   layout.draw_narrative(p,None,"SMB Browser",&browser_copy,measure);
    let src=SmbCardSource{rows:&self.rows};
    self.browser_grid.draw(f,p.clipped(Rect::new(MARGIN_X,300.0,SCR_W-2.0*MARGIN_X,plx_ui::consts::SCR_H-300.0)),&src);
    return;
