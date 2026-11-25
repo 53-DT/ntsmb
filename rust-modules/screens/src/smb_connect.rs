@@ -8,7 +8,8 @@ use plx_machine::machine::{
     LogicalState, Machine, NavOp, Fx, TextEdit, Host,
 };
 use plx_ui::frame::Budget;
-use plx_ui::cards::{CardEvent, CardSource, Grid, GridSpec, RowStyle, Tile, TileLabel};
+use plx_ui::cards::{AvatarRow, CardEvent, CardSource, Grid, GridSpec, RowStyle, Tile, TileLabel};
+use plx_ui::geom;
 use plx_ui::widgets::Art;
 use plx_machine::machine::Measure;
 use plx_ui::label::{Label, HAlign};
@@ -21,7 +22,7 @@ use plx_ui::screen::{
 use plx_ui::route_screen::RouteLayout;
 use plx_ui::text_buffer::TextBuffer;
 use plx_ui::text_field::{TextField, FIELD_H};
-use plx_ui::widgets::{Button, CtlPop, ProfileChipRead, profile_chip_text, profile_chip_with};
+use plx_ui::widgets::Button;
 use plx_ui::{theme, Env, Rect, View};
 use plx_smb::{connect_form::ConnectForm, controller::{BrowseController, Phase, Activation, Back}};
 
@@ -33,17 +34,15 @@ const GUEST: u32 = 14;
 const CONNECT: u32 = 15;
 const SAVE: u32 = 16;
 const SHARE_BASE: u32 = 100;
-const SAVED_BASE: u32 = 200;
+const SAVED_BASE: u32 = 0;
 const NEW_CONNECTION: u32 = 17;
 const CHANGE_SERVER: u32 = 18;
 const PROFILE: u32 = 19;
-const MENU_SAVED: u32 = 20;
-const MENU_ADD: u32 = 21;
-const MENU_DISCONNECT: u32 = 22;
-const MENU_CLOSE: u32 = 23;
-const REMOVE_BASE: u32 = 300;
 const FORM_GROUP: plx_machine::machine::GroupId = plx_machine::machine::GroupId(0);
 const PROFILE_GROUP: plx_machine::machine::GroupId = plx_machine::machine::GroupId(1);
+const SAVED_FOOTER_GROUP: plx_machine::machine::GroupId = plx_machine::machine::GroupId(2);
+const SAVED_ROW_Y: f32 = 384.0;
+const SAVED_FOOTER_Y: f32 = 780.0;
 const GAP: f32 = theme::space::SM;
 const SHARE_TOP_PAD: f32 = 112.0;
 const FIELD_W: f32 = 720.0;
@@ -70,12 +69,9 @@ pub struct SmbConnectScreen {
     saved_id: Option<String>,
     last_saved_path: String,
     saved_view: bool,
-    menu_open: bool,
     resume_path: Option<String>,
     browser_grid: Grid,
-    // Reuse FinNative's spring-based control lift for the Profile toggle and its menu items.
-    profile_pop: CtlPop<1>,
-    menu_pop: CtlPop<4>,
+    saved_row: AvatarRow,
 }
 
 struct SmbCardSource<'a> { rows: &'a [plx_smb::browser::BrowserEntry] }
@@ -113,7 +109,7 @@ impl SmbConnectScreen {
         saved_paths.push(plx_base::paths::runtime_dir().join("ntsmb-connections.json"));
         saved_paths.dedup();
         let saved = plx_smb::store::SavedStore::open_with_runtime(saved_paths, Some(plx_base::paths::runtime_dir().to_path_buf()));
-        let saved_view = !saved.connections().is_empty();
+        let saved_view = true;
         Self {
             entry, host: TextBuffer::new(String::new(), 0),
             port: TextBuffer::new(form.port.clone(), form.port.len()),
@@ -122,10 +118,20 @@ impl SmbConnectScreen {
             form, controller: BrowseController::new(),
             shares: Vec::new(), rows: Vec::new(), selected: 0, error: saved.saved_temporarily().then(|| "Saved in temporary TV storage; it may be lost after a TV restart".into()), connecting: false, editing: None, playback: None,
             saved, save_pending: false, saved_id: None, last_saved_path: String::new(),
-            saved_view, menu_open: false, resume_path: None,
+            saved_view, resume_path: None,
             browser_grid: Grid::new(entry, GridSpec::resting(324.0).columns(6, RowStyle { gap: (SCR_W - 2.0 * MARGIN_X - 44.0 - 6.0 * CARD_W) / 5.0, ..RowStyle::HOME }, MARGIN_X)),
-            profile_pop: CtlPop::new(), menu_pop: CtlPop::new(),
+            saved_row: AvatarRow::new(),
         }
+    }
+    fn saved_row_geom(n: usize) -> (f32, f32) {
+        let sty = AvatarRow::STYLE;
+        let slot = sty.w + sty.gap;
+        let total = (n as f32 * slot - sty.gap).max(0.0);
+        (((SCR_W as f32 - total) * 0.5).max(sty.margin_x), slot)
+    }
+    fn saved_shelf(&self) -> geom::Shelf<'_> {
+        self.saved_row.focusable(self.saved.connections().len(), SAVED_ROW_Y, PROFILE_GROUP, self.entry,
+            Rect::new(0.0, SAVED_ROW_Y, SCR_W as f32, AvatarRow::STYLE.h))
     }
     fn buffer(&self, field: u32) -> &TextBuffer {
         match field { HOST => &self.host, PORT => &self.port, USER => &self.user, _ => &self.password }
@@ -233,14 +239,6 @@ impl SmbConnectScreen {
         }
     }
     fn stop_rect(&self, field: u32, measure: &dyn plx_machine::machine::Measure) -> Option<Rect> {
-        if field >= SAVED_BASE && field < REMOVE_BASE {
-            let i=(field-SAVED_BASE) as usize; let layout=RouteLayout::screen();
-            return Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),520.0,FIELD_H));
-        }
-        if field >= REMOVE_BASE && field < REMOVE_BASE + plx_smb::store::MAX_SAVED as u32 {
-            let i=(field-REMOVE_BASE) as usize; let layout=RouteLayout::screen();
-            return Some(Rect::new(layout.content.x+540.0,layout.content.y+i as f32*(FIELD_H+GAP),150.0,FIELD_H));
-        }
         if field == NEW_CONNECTION {
             let layout=RouteLayout::screen();
             return Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H));
@@ -255,10 +253,6 @@ impl SmbConnectScreen {
             return Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+i as f32*(FIELD_H+GAP),base.w,FIELD_H));
         }
         if field == PROFILE { return Some(Self::profile_rect()); }
-        if field == MENU_SAVED { return Some(Self::menu_rect(0)); }
-        if field == MENU_ADD { return Some(Self::menu_rect(1)); }
-        if field == MENU_DISCONNECT { return Some(Self::menu_rect(2)); }
-        if field == MENU_CLOSE { return Some(Self::menu_rect(3)); }
         let r = Self::rect(field, measure)?;
         Some(if Self::field(field) { plx_ui::text_field::plate(r) } else { r })
     }
@@ -300,49 +294,37 @@ impl SmbConnectScreen {
         }
     }
     fn ids(&self) -> Vec<u32> {
-        if self.menu_open {
-            return vec![MENU_SAVED, MENU_ADD, MENU_DISCONNECT, MENU_CLOSE];
-        }
         if self.controller.phase()==Phase::Browsing {
             let rows: Vec<u32> = (0..self.rows.len()).map(|i| SHARE_BASE+i as u32).collect();
             if rows.is_empty() { vec![PROFILE] } else { rows }
         } else if !self.shares.is_empty() {
             (0..self.shares.len()).map(|i| SHARE_BASE + i as u32).chain(std::iter::once(CHANGE_SERVER)).chain(std::iter::once(PROFILE)).collect()
-        } else if self.saved_view && !self.saved.connections().is_empty() {
-            (0..self.saved.connections().len()).flat_map(|i| [SAVED_BASE+i as u32, REMOVE_BASE+i as u32]).chain(std::iter::once(NEW_CONNECTION)).chain(std::iter::once(PROFILE)).collect()
+        } else if self.saved_view {
+            (0..self.saved.connections().len()).map(|i| SAVED_BASE+i as u32).chain(std::iter::once(NEW_CONNECTION)).collect()
         } else {
             vec![HOST, PORT, USER, PASSWORD, CONNECT, GUEST, SAVE, PROFILE]
         }
     }
-    fn profile_rect() -> Rect { plx_ui::widgets::CHIP_FRAME }
-    fn menu_rect(index: usize) -> Rect {
-        // Keep the profile actions in a horizontal strip above the browser grid/share list.
-        // The old vertical popup overlapped the first rows after a server was connected.
-        let width = 280.0;
-        let gap = 16.0;
-        let total = 4.0 * width + 3.0 * gap;
-        let x = (SCR_W - total) * 0.5;
-        Rect::new(x + index as f32 * (width + gap), 92.0, width, FIELD_H)
-    }
-    fn draw_profile_controls(&self, p: plx_ui::Painter, measure: &dyn Measure, focus: Option<u32>) {
-        let server_label = self.host.text().trim().to_owned();
-        let label = if server_label.is_empty() { "SMB".to_owned() } else { server_label };
-        let initial = label.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_else(|| "S".to_owned());
-        let (initial_c, name_c, name_w) = profile_chip_text(&label, &initial, 320.0, measure);
-        let profile = ProfileChipRead { src: 0, thumb: "", initial: initial_c.as_c_str(), name: name_c.as_c_str(), name_w };
-        profile_chip_with(p, profile, self.profile_pop.focus(0), None);
-        if self.menu_open {
-            for (i, (id, title)) in [
-                (MENU_SAVED, "Saved IPs"),
-                (MENU_ADD, "Add IP"),
-                (MENU_DISCONNECT, "Disconnect"),
-                (MENU_CLOSE, "Close"),
-            ].iter().enumerate() {
-                let title = CString::new(*title).unwrap();
-                Button::new(title.as_ptr(), theme::size::BODY, Self::menu_rect(i))
-                    .focused(focus == Some(*id)).scale(1.0 + self.menu_pop.focus(i) * 0.06).draw(&Env::inert(), p);
-            }
+    fn draw_saved_name(p: plx_ui::Painter, name: &str, cx: f32, focused: bool, measure: &dyn Measure) {
+        let color = if focused { theme::TEXT_PRIMARY } else { theme::TEXT_SECONDARY };
+        let elided = plx_gfx::text::elide_by(
+            name,
+            AvatarRow::STYLE.w + AvatarRow::STYLE.gap - 12.0,
+            false,
+            |text| measure.width_str(text, theme::size::LABEL, focused),
+        );
+        if let Ok(label) = CString::new(elided) {
+            let name_dy = AvatarRow::STYLE.h
+                + AvatarRow::STYLE.h * (AvatarRow::STYLE.focus_scale - 1.0) * 0.5
+                + theme::space::MD;
+            p.text(label.as_ptr(), cx, SAVED_ROW_Y + name_dy, theme::size::LABEL, color, 1, if focused { 1 } else { 0 });
         }
+    }
+    fn profile_rect() -> Rect { Rect::new(SCR_W as f32 - 300.0, 92.0, 250.0, FIELD_H) }
+    fn draw_profile_controls(&self, p: plx_ui::Painter, measure: &dyn Measure, focus: Option<u32>) {
+        let label = CString::new("Saved profiles").unwrap();
+        let r = Rect::new(SCR_W as f32 - 300.0, 92.0, 250.0, FIELD_H);
+        Button::new(label.as_ptr(), theme::size::BODY, r).focused(focus == Some(PROFILE)).draw(&Env::inert(), p);
         let _ = measure;
     }
 }
@@ -380,9 +362,9 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
    }
    ScreenEvent::Tick(t)=>{
     let focus=_cx.focus.current.map(|key|key.elem);
-    self.profile_pop.step((focus==Some(PROFILE)).then_some(0),t.dt());
-    let menu_focus=focus.and_then(|elem|[MENU_SAVED,MENU_ADD,MENU_DISCONNECT,MENU_CLOSE].iter().position(|id|*id==elem));
-    self.menu_pop.step(menu_focus,t.dt());
+    let saved_focus = if self.saved_view { focus.filter(|e| *e >= SAVED_BASE && (*e-SAVED_BASE) < self.saved.connections().len() as u32).map(|e| (e-SAVED_BASE) as usize) } else { None };
+    self.saved_row.set_margin_x(Self::saved_row_geom(self.saved.connections().len()).0);
+    self.saved_row.update(self.saved.connections().len(), saved_focus, t.dt());
     if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;
     if let Some(rx)=self.playback.as_ref(){
      match rx.try_recv(){
@@ -396,36 +378,13 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
    }
    ScreenEvent::Activate(elem) => {
     match *elem {
-     PROFILE => { self.menu_open = true; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
-     MENU_CLOSE => { self.menu_open = false; fx.invalidate(plx_machine::present::Provenance::Input); }
-     MENU_SAVED => {
-      self.menu_open = false;
-      self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.connecting=false; self.save_pending=false; self.saved_id=None;
-      self.saved_view = !self.saved.connections().is_empty();
-      if !self.saved_view { self.error = Some("No saved IPs yet. Choose Add IP to connect to a server.".into()); }
-      fx.invalidate(plx_machine::present::Provenance::Input);
-     }
-     MENU_ADD => {
-      self.menu_open = false; self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=false;
-      self.host=TextBuffer::new(String::new(),0); self.port=TextBuffer::new("445".into(),3); self.user=TextBuffer::new(String::new(),0); self.password=TextBuffer::new(String::new(),0);
-      self.form=ConnectForm::new(); self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input);
-     }
-     MENU_DISCONNECT => {
-      self.menu_open = false; self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.selected=0; self.connecting=false; self.save_pending=false; self.saved_id=None;
-      self.saved_view = !self.saved.connections().is_empty(); self.error=None; fx.invalidate(plx_machine::present::Provenance::Input);
-     }
-     e if e>=REMOVE_BASE && e<REMOVE_BASE+plx_smb::store::MAX_SAVED as u32 && self.saved_view => {
-      let index=(e-REMOVE_BASE) as usize;
-      if let Some(saved)=self.saved.connections().get(index) { let id=saved.id.clone(); self.saved.remove(&id); if let Err(error)=self.saved.save(){self.error=Some(error);} }
-      if self.saved.connections().is_empty(){self.saved_view=false;}
-      fx.invalidate(plx_machine::present::Provenance::Input);
-     }
+     PROFILE => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=true; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
      HOST|PORT|USER|PASSWORD => self.set_editing(if self.editing==Some(*elem){None}else{Some(*elem)},fx),
      GUEST => { self.form.guest=!self.form.guest; if self.form.guest { self.set_editing(None,fx); } fx.invalidate(plx_machine::present::Provenance::Input); }
      SAVE => { self.form.save_connection=!self.form.save_connection; fx.invalidate(plx_machine::present::Provenance::Input); }
-     NEW_CONNECTION => { self.saved_view=false; self.saved_id=None; self.error=None; fx.invalidate(plx_machine::present::Provenance::Input); }
-     CHANGE_SERVER => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.selected=0; self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=false; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
-     e if e>=SAVED_BASE && self.saved_view => {
+     NEW_CONNECTION => { self.saved_view=false; self.saved_id=None; self.error=None; self.host=TextBuffer::new(String::new(),0); self.port=TextBuffer::new("445".into(),3); self.user=TextBuffer::new(String::new(),0); self.password=TextBuffer::new(String::new(),0); self.form=ConnectForm::new(); self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
+     CHANGE_SERVER => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.selected=0; self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=true; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
+     e if self.saved_view && (e as usize)<self.saved.connections().len() => {
       let index=(e-SAVED_BASE) as usize;
       if let Some(saved)=self.saved.connections().get(index).cloned(){
        self.host=TextBuffer::new(saved.profile.host.clone(),saved.profile.host.len());
@@ -465,7 +424,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
        if matches!(key,Key::Up|Key::Down){self.set_editing(None,fx);return Handled::No;}
        return Handled::Yes;
       }
-      if *key==Key::Back { if self.menu_open {self.menu_open=false;fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes} else if self.saved_view {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} else if self.controller.phase()==Phase::Browsing { match self.controller.go_back(){Back::Handled=>{self.error=None;self.connecting=true;},Back::Leave=>{self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=false;self.saved_id=None;self.error=None;} } Handled::Yes } else if !self.shares.is_empty() { self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=false;self.saved_id=None;self.error=None;fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes } else if !self.saved.connections().is_empty(){self.saved_view=true;self.error=self.saved.saved_temporarily().then(||"Saved in temporary TV storage; it may be lost after a TV restart".into());self.set_editing(None,fx);fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes} else {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} } else if matches!(key,Key::Up|Key::Down|Key::Left|Key::Right) { Handled::No } else {Handled::No}
+      if *key==Key::Back { if self.saved_view {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} else if self.controller.phase()==Phase::Browsing { match self.controller.go_back(){Back::Handled=>{self.error=None;self.connecting=true;},Back::Leave=>{self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=true;self.saved_id=None;self.error=None;} } Handled::Yes } else if !self.shares.is_empty() { self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=true;self.saved_id=None;self.error=None;fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes } else if !self.saved.connections().is_empty(){self.saved_view=true;self.error=self.saved.saved_temporarily().then(||"Saved in temporary TV storage; it may be lost after a TV restart".into());self.set_editing(None,fx);fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes} else {self.saved_view=true;self.set_editing(None,fx);fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes} } else if matches!(key,Key::Up|Key::Down|Key::Left|Key::Right) { Handled::No } else {Handled::No}
     }
     _=>Handled::No
    },
@@ -478,7 +437,13 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
 impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H> for SmbConnectScreen {
  fn groups(&self,cx:&Cx<'_,H>,out:&mut Vec<GroupSpec>){
   let ids=self.ids(); if ids.is_empty(){return;}
-  if self.controller.phase()==Phase::Browsing && !self.menu_open && !self.rows.is_empty() {
+  if self.saved_view {
+   if !self.saved.connections().is_empty() { Focusable::<H>::groups(&self.saved_shelf(),cx,out); }
+   let r=Rect::new((SCR_W as f32-420.0)*0.5,SAVED_FOOTER_Y,420.0,60.0);
+   out.push(GroupSpec{id:SAVED_FOOTER_GROUP,kind:GroupKind::Row{wrap:false},seat:Seat::First,reachable:AxisMask::VERTICAL,edge:[EdgeRule::Geometric,EdgeRule::Stop,EdgeRule::Stop,EdgeRule::Stop],extent:r,len:1,elem:ElemKind::Control});
+   return;
+  }
+  if self.controller.phase()==Phase::Browsing && !self.rows.is_empty() {
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Grid{cols:6,holes:&[]},seat:Seat::Remembered,reachable:AxisMask::BOTH,edge:[EdgeRule::Geometric;4],extent:Rect::new(MARGIN_X,324.0,SCR_W-2.0*MARGIN_X,CARD_H),len:self.rows.len(),elem:ElemKind::Card});
    out.push(GroupSpec{id:PROFILE_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent:Self::profile_rect(),len:1,elem:ElemKind::Bare});
   } else {
@@ -486,17 +451,10 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent,len:ids.len(),elem:ElemKind::Bare});
   }
  }
- fn group_of(&self,elem:&u32,_cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{if !self.menu_open && self.controller.phase()==Phase::Browsing && !self.rows.is_empty() && *elem==PROFILE {Some(PROFILE_GROUP)} else {self.ids().contains(elem).then_some(FORM_GROUP)}}
- fn neighbour(&self,key:FocusKey<u32>,dir:Dir,_cx:&Cx<'_,H>)->Step<u32>{
-  if self.menu_open {
-   let menu=[MENU_SAVED,MENU_ADD,MENU_DISCONNECT,MENU_CLOSE];
-   if let Some(i)=menu.iter().position(|e|*e==key.elem) {
-    let next=match dir {Dir::Left=>i.checked_sub(1),Dir::Right=>(i+1<menu.len()).then_some(i+1),_=>None};
-    return next.map_or(Step::Edge,|j|Step::Move(FocusKey{entry:self.entry,elem:menu[j]}));
-   }
-   return Step::Edge;
-  }
-  if self.controller.phase()==Phase::Browsing && !self.menu_open {
+ fn group_of(&self,elem:&u32,cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{if self.saved_view { if *elem==NEW_CONNECTION {Some(SAVED_FOOTER_GROUP)} else {Focusable::<H>::group_of(&self.saved_shelf(),elem,cx)} } else if self.controller.phase()==Phase::Browsing && !self.rows.is_empty() && *elem==PROFILE {Some(PROFILE_GROUP)} else {self.ids().contains(elem).then_some(FORM_GROUP)}}
+ fn neighbour(&self,key:FocusKey<u32>,dir:Dir,cx:&Cx<'_,H>)->Step<u32>{
+  if self.saved_view { if key.elem==NEW_CONNECTION {return Step::Edge;} return Focusable::<H>::neighbour(&self.saved_shelf(),key,dir,cx); }
+  if self.controller.phase()==Phase::Browsing {
    if key.elem==PROFILE { return if dir==Dir::Down && !self.rows.is_empty(){Step::Move(FocusKey{entry:self.entry,elem:SHARE_BASE})}else{Step::Edge}; }
    if key.elem>=SHARE_BASE && dir==Dir::Up && (key.elem-SHARE_BASE)<6 { return Step::Move(FocusKey{entry:self.entry,elem:PROFILE}); }
    let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.neighbour::<H,_>(&src,key,dir);
@@ -546,27 +504,20 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   best.map_or(Step::Edge,|(_,elem)|Step::Move(FocusKey{entry:self.entry,elem}))
  }
  fn place(&self,elem:&u32,cx:&Cx<'_,H>,at:At)->Option<Placed>{
+  if self.saved_view { if *elem==NEW_CONNECTION {let r=Rect::new((SCR_W as f32-420.0)*0.5,SAVED_FOOTER_Y,420.0,60.0);return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(0)});} return Focusable::<H>::place(&self.saved_shelf(),elem,cx,at); }
   if *elem==PROFILE { let r=Self::profile_rect(); return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(0)}); }
-  if *elem==MENU_SAVED || *elem==MENU_ADD || *elem==MENU_DISCONNECT || *elem==MENU_CLOSE {
-   let i=match *elem {MENU_SAVED=>0,MENU_ADD=>1,MENU_DISCONNECT=>2,_=>3}; let r=Self::menu_rect(i);
-   return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(i as u32)});
-  }
-  if *elem>=REMOVE_BASE && *elem<REMOVE_BASE+plx_smb::store::MAX_SAVED as u32 {
-   let i=(*elem-REMOVE_BASE) as usize; let layout=RouteLayout::screen(); let r=Rect::new(layout.content.x+540.0,layout.content.y+i as f32*(FIELD_H+GAP),150.0,FIELD_H);
-   return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(i as u32)});
-  }
   if self.controller.phase()==Phase::Browsing && *elem>=SHARE_BASE { let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.place(cx,&src,elem,at); }
-  let r=if *elem>=SAVED_BASE && *elem<REMOVE_BASE {let i=(*elem-SAVED_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),520.0,FIELD_H))}
-  else if *elem>=SHARE_BASE && *elem<SHARE_BASE+self.shares.len() as u32 {let i=(*elem-SHARE_BASE) as usize;let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+i as f32*(FIELD_H+GAP),base.w,FIELD_H))}
+  let r=if *elem>=SHARE_BASE && *elem<SHARE_BASE+self.shares.len() as u32 {let i=(*elem-SHARE_BASE) as usize;let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+i as f32*(FIELD_H+GAP),base.w,FIELD_H))}
   else if *elem==NEW_CONNECTION {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
   else if *elem==CHANGE_SERVER {let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+self.shares.len() as f32*(FIELD_H+GAP),base.w,FIELD_H))}
   else{self.stop_rect(*elem,cx.measure)}?;
   Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(self.ids().iter().position(|e|e==elem).unwrap_or(0) as u32)})
  }
- fn reconcile(&self,want:FocusKey<u32>,_cx:&Cx<'_,H>)->FocusKey<u32>{if (want.elem==PROFILE && !self.menu_open && self.controller.phase()==Phase::Browsing && !self.rows.is_empty()) || self.ids().contains(&want.elem){want}else{FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}}}
- fn seat(&self,g:plx_machine::machine::GroupId,from:Placed,_cx:&Cx<'_,H>)->FocusKey<u32>{
+ fn reconcile(&self,want:FocusKey<u32>,cx:&Cx<'_,H>)->FocusKey<u32>{if self.saved_view { if want.elem==NEW_CONNECTION {want} else if self.saved.connections().is_empty(){FocusKey{entry:self.entry,elem:NEW_CONNECTION}} else {Focusable::<H>::reconcile(&self.saved_shelf(),want,cx)} } else if (want.elem==PROFILE && self.controller.phase()==Phase::Browsing && !self.rows.is_empty()) || self.ids().contains(&want.elem){want}else{FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}}}
+ fn seat(&self,g:plx_machine::machine::GroupId,from:Placed,cx:&Cx<'_,H>)->FocusKey<u32>{
+  if self.saved_view { if g==SAVED_FOOTER_GROUP {return FocusKey{entry:self.entry,elem:NEW_CONNECTION};} return Focusable::<H>::seat(&self.saved_shelf(),g,from,cx); }
   if g==PROFILE_GROUP { return FocusKey{entry:self.entry,elem:PROFILE}; }
-  if self.controller.phase()==Phase::Browsing && !self.menu_open { let src=SmbCardSource{rows:&self.rows}; if let Some(key)=self.browser_grid.seat::<H,SmbCardSource<'_>>(&src,from){return key;} }
+  if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows}; if let Some(key)=self.browser_grid.seat::<H,SmbCardSource<'_>>(&src,from){return key;} }
   FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}
  }
 }
@@ -587,21 +538,38 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
     else{"Enter your server details to browse and play videos.".to_owned()};
    layout.draw_narrative(p,None,"Connect to SMB",&body,measure);
   }
-  if self.saved_view && !self.saved.connections().is_empty() {
-   let saved_copy=self.error.as_deref().unwrap_or("Choose a saved server or create a new connection.");
-   layout.draw_narrative(p,None,"Saved SMB servers",saved_copy,measure);
-   for (i,saved) in self.saved.connections().iter().enumerate(){
-    let id=SAVED_BASE+i as u32; let y=layout.content.y+i as f32*(FIELD_H+GAP);
-    let r=Rect::new(layout.content.x,y,520.0,FIELD_H);
-    let label=format!("{}  ·  {}",saved.name,if saved.profile.guest{"Guest"}else{&saved.profile.username});
-    TextField::new(plx_os::i18n::msg::browse_jf_server_c(),&label).hot(if focus==Some(id){1.0}else{0.0}).draw(p,r,measure);
-    let remove=CString::new("Remove").unwrap();
-    Button::new(remove.as_ptr(),theme::size::BODY,Rect::new(layout.content.x+540.0,y,150.0,FIELD_H))
-      .focused(focus==Some(REMOVE_BASE+i as u32)).draw(&Env::inert(),p);
+  if self.saved_view {
+   let help=self.error.as_deref().unwrap_or("Choose a saved server or add a new connection.");
+   layout.draw_narrative(p,None,"Who's watching?",help,measure);
+   let users=self.saved.connections(); let n=users.len();
+   let (start_x,slot)=Self::saved_row_geom(n); let scroll=self.saved_row.scroll_x();
+   let extent=Rect::new(0.0,SAVED_ROW_Y,SCR_W as f32,AvatarRow::STYLE.h);
+   let focused_i=focus.filter(|e|(*e as usize)<n).map(|e|*e as usize);
+   for (i,saved) in users.iter().enumerate() {
+    if focused_i==Some(i){continue;}
+    let cx=start_x+i as f32*slot+AvatarRow::STYLE.w*0.5-scroll;
+    let base=Rect::new(cx-AvatarRow::STYLE.w*0.5,SAVED_ROW_Y,AvatarRow::STYLE.w,AvatarRow::STYLE.h);
+    let key=FocusKey{entry:self.entry,elem:i as u32};
+    let rect=self.saved_row.draw(p,i,base,Art::Poster(None),false,measure,&f.press,&key);
+    let mark=CString::new("SMB").unwrap();
+    Label::new(mark.as_ptr(),46,theme::TEXT_PRIMARY).h(HAlign::Center).draw(p,Rect::new(rect.x,rect.y+rect.h*0.34,rect.w,48.0));
+    Self::draw_saved_name(p,&saved.name,cx,false,measure);
+    f.stop(p,Stop{key,rect,rest_rect:base,clip:extent,hover:plx_ui::screen::Hover::Focus,activate:plx_ui::screen::Activate::Press});
    }
-   let r=Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H);
-   Button::new(CString::new("New connection").unwrap().as_ptr(),theme::size::BODY,r).focused(focus==Some(NEW_CONNECTION)).draw(&Env::inert(),p);
-   self.draw_profile_controls(p,measure,focus);
+   if let Some(i)=focused_i {
+    let saved=&users[i]; let cx=start_x+i as f32*slot+AvatarRow::STYLE.w*0.5-scroll;
+    let base=Rect::new(cx-AvatarRow::STYLE.w*0.5,SAVED_ROW_Y,AvatarRow::STYLE.w,AvatarRow::STYLE.h);
+    let key=FocusKey{entry:self.entry,elem:i as u32};
+    let rect=self.saved_row.draw(p,i,base,Art::Poster(None),true,measure,&f.press,&key);
+    let mark=CString::new("SMB").unwrap();
+    Label::new(mark.as_ptr(),46,theme::ACCENT_INK).h(HAlign::Center).draw(p,Rect::new(rect.x,rect.y+rect.h*0.34,rect.w,48.0));
+    Self::draw_saved_name(p,&saved.name,cx,true,measure);
+    f.stop(p,Stop{key,rect,rest_rect:base,clip:extent,hover:plx_ui::screen::Hover::Focus,activate:plx_ui::screen::Activate::Press});
+   }
+   let add=CString::new("Add connection").unwrap();
+   let add_r=Rect::new((SCR_W as f32-420.0)*0.5,SAVED_FOOTER_Y,420.0,60.0);
+   Button::new(add.as_ptr(),theme::size::BODY,add_r).focused(focus==Some(NEW_CONNECTION)).draw(&Env::inert(),p);
+   f.stop(p,Stop{key:FocusKey{entry:self.entry,elem:NEW_CONNECTION},rect:add_r,rest_rect:add_r,clip:Rect::FULL,hover:plx_ui::screen::Hover::Focus,activate:plx_ui::screen::Activate::Press});
    return;
   }
   if self.controller.phase()==Phase::Browsing {
