@@ -68,3 +68,49 @@ pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlay
 
     Ok(PreparedPlayback { play, bridge, probe })
 }
+
+
+// SMB directory autoplay is an in-memory queue owned by the SMB feature. After EOS the
+// existing player returns to the browser, which prepares the next sibling off the frame thread.
+struct AutoplayState {
+    queue: std::collections::VecDeque<(usize, crate::controller::PlayRequest)>,
+    armed: bool,
+}
+static AUTOPLAY: std::sync::OnceLock<std::sync::Mutex<AutoplayState>> = std::sync::OnceLock::new();
+
+fn autoplay_state() -> &'static std::sync::Mutex<AutoplayState> {
+    AUTOPLAY.get_or_init(|| std::sync::Mutex::new(AutoplayState {
+        queue: std::collections::VecDeque::new(),
+        armed: false,
+    }))
+}
+
+pub fn set_autoplay_queue(queue: Vec<(usize, crate::controller::PlayRequest)>) {
+    let mut state = autoplay_state().lock().unwrap_or_else(|p| p.into_inner());
+    state.queue = queue.into();
+    state.armed = false;
+}
+
+pub fn clear_autoplay_queue() {
+    let mut state = autoplay_state().lock().unwrap_or_else(|p| p.into_inner());
+    state.queue.clear();
+    state.armed = false;
+}
+
+pub fn arm_autoplay_if_next() -> bool {
+    let mut state = autoplay_state().lock().unwrap_or_else(|p| p.into_inner());
+    if state.queue.is_empty() {
+        state.armed = false;
+        false
+    } else {
+        state.armed = true;
+        true
+    }
+}
+
+pub fn take_autoplay_next() -> Option<(usize, crate::controller::PlayRequest)> {
+    let mut state = autoplay_state().lock().unwrap_or_else(|p| p.into_inner());
+    if !state.armed { return None; }
+    state.armed = false;
+    state.queue.pop_front()
+}

@@ -1170,7 +1170,7 @@ impl PlayerAdapter {
     }
 
     /// Discard an app-supplied direct-file source when the player refuses to start it.
-    pub fn clear_external_playback(&mut self) {
+    /// True while a direct SMB source owns the range bridge for the current item.\n    pub fn has_external_playback(&self) -> bool {\n        self.range_server.is_some()\n    }\n\n    pub fn clear_external_playback(&mut self) {
         *self.external_play_url.get_mut().unwrap_or_else(|p| p.into_inner()) = None;
         self.range_server.take();
     }

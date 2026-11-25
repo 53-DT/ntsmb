@@ -14,7 +14,7 @@ use plx_machine::machine::Measure;
 use plx_ui::label::{Label, HAlign};
 use plx_ui::consts::{CARD_H, CARD_W, MARGIN_X, SCR_W};
 use plx_ui::screen::{
-    At, AxisMask, DrawFrame, EdgeRule, ElemKind, FocusSource, Focusable, GroupKind,
+    At, AxisMask, DrawFrame, EdgeRule, ElemKind, Enter, FocusSource, Focusable, GroupKind,
     GroupSpec, HitSource, Placed, RenderStrategy, Screen, ScreenEvent, Seat, Scrim, Step, Dir,
     TextEntry,
 };
@@ -210,6 +210,24 @@ impl SmbConnectScreen {
     }
     fn activate_browser_index(&mut self, index: usize) {
         if index >= self.rows.len() { return; }
+        if self.rows[index].is_video {
+            let request = self.controller.request().cloned();
+            let share = self.controller.share().map(str::to_owned);
+            let folder = self.controller.folder().to_owned();
+            let queue = match (request, share) {
+                (Some(request), Some(share)) => self.rows.iter().enumerate().skip(index + 1)
+                    .filter(|(_, row)| row.is_video)
+                    .filter_map(|(next_index, row)| {
+                        plx_smb::browser::child_path(&folder, &row.entry.name).ok().map(|path| {
+                            (next_index, plx_smb::controller::PlayRequest { request: request.clone(), share: share.clone(), path })
+                        })
+                    }).collect(),
+                _ => Vec::new(),
+            };
+            plx_smb::playback::set_autoplay_queue(queue);
+        } else {
+            plx_smb::playback::clear_autoplay_queue();
+        }
         let current = self.controller.browser().selected();
         self.controller.move_selection(index as isize - current as isize);
         self.selected = index;
@@ -255,6 +273,18 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
    }
   }
   match ev {
+   ScreenEvent::Enter(Enter::Restored) => {
+    if let Some((index, play)) = plx_smb::playback::take_autoplay_next() {
+     let current=self.controller.browser().selected();
+     self.controller.move_selection(index as isize-current as isize);
+     self.selected=index;
+     match plx_smb::controller::spawn_prepare(play) {
+      Ok(rx)=>{self.playback=Some(rx);self.connecting=true;self.error=None;}
+      Err(error)=>{self.error=Some(error);self.connecting=false;plx_smb::playback::clear_autoplay_queue();}
+     }
+    }
+    Handled::Yes
+   }
    ScreenEvent::Tick(_)=>{
     if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;}
     if let Some(rx)=self.playback.as_ref(){

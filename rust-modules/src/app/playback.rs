@@ -1176,6 +1176,11 @@ pub(crate) fn finish_playback(
     if plx_media::player::server_stop_applies(&player.session) {
         return false;
     }
+    // SMB has no media-server Up Next metadata: restore its browser and prepare the next sibling.
+    if pa.has_external_playback() && plx_smb::playback::arm_autoplay_if_next() {
+        exit_player(player, pa, repause_at, refresh_hubs, pages);
+        return true;
+    }
     exit_player(player, pa, repause_at, refresh_hubs, pages);
     // The ring goes back to the scrubber for the NEXT session, and the next session is a fresh
     // instance — so there is nothing to park here any more (`start_playback`'s note).
