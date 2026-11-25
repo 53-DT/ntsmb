@@ -56,6 +56,7 @@ pub struct SmbConnectScreen {
     saved_id: Option<String>,
     last_saved_path: String,
     saved_view: bool,
+    resume_path: Option<String>,
 }
 impl SmbConnectScreen {
     pub fn new(entry: EntryId) -> Self {
@@ -69,7 +70,7 @@ impl SmbConnectScreen {
             shares: Vec::new(), rows: Vec::new(), selected: 0, error: None, connecting: false, editing: None, playback: None,
             saved: plx_smb::store::SavedStore::open(vec![plx_base::paths::persistent_state_root().join("ntsmb-connections.json")]),
             save_pending: false, saved_id: None, last_saved_path: String::new(),
-            saved_view: false,
+            saved_view: false, resume_path: None,
         }
     }
     fn buffer(&self, field: u32) -> &TextBuffer {
@@ -107,6 +108,7 @@ impl SmbConnectScreen {
         self.sync_form();
         let request = self.form.validate()?;
         self.controller.connect(request)?;
+        if let Some(path) = self.resume_path.take() { self.controller.resume_in(&path); }
         self.connecting = true;
         self.error = None;
         self.save_pending = self.form.save_connection;
@@ -217,7 +219,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
        self.form.guest=saved.profile.guest; self.form.share=saved.profile.share.clone();
        self.form.save_connection=true; self.saved_id=Some(saved.id.clone());
        self.saved.mark_used(&saved.id); let _=self.saved.save();
-       self.controller.resume_in(&saved.last_path);
+       self.resume_path=Some(saved.last_path.clone());
        self.saved_view=false;
        if !saved.profile.guest && self.form.password.is_empty(){self.error=Some("Enter the password for this saved server".into());self.set_editing(Some(PASSWORD),fx);}
        else {if let Err(error)=self.connect(){self.error=Some(error);}}
