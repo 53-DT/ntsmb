@@ -3154,6 +3154,16 @@ impl Bridge<'_> {
                             let Some(resources) = resources else { return Some((command.id, AppCommandOutcome::Refused, emitted)) };
                             super::playback::execute_player_command(request, d, self, resources, now)
                         }
+                        Ok(ExternalAppFx::SmbPlaybackReady(prepared)) => {
+                            let Some(resources) = resources else { return Some((command.id, AppCommandOutcome::Refused, emitted)) };
+                            if super::playback::start_smb_playback(
+                                &mut resources.player.session,
+                                &mut resources.adapters.player,
+                                d,
+                                self,
+                                prepared,
+                            ) { AppCommandOutcome::Completed } else { AppCommandOutcome::Refused }
+                        }
                         Ok(ExternalAppFx::Watchlist(request)) => {
 
                 let outcome = super::content::execute_watchlist_command(d, self, command.from,

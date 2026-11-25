@@ -49,7 +49,7 @@ plx_data = { path = "../data" }
 plx_session = { path = "../session" }
 plx_media = { path = "../media", default-features = false }
 plx_appkit = { path = "../appkit" }
-plx_smb = { path = "../smb" }
+plx_smb = { path = "../smb", features = ["playback"] }
 plx_jellyfin = { path = "../jellyfin", optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc", "std"] }
 

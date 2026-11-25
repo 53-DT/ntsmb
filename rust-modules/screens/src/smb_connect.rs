@@ -47,6 +47,7 @@ pub struct SmbConnectScreen {
     pub selected: usize,
     pub error: Option<String>,
     pub connecting: bool,
+    playback: Option<std::sync::mpsc::Receiver<Result<plx_smb::playback::PreparedPlayback, String>>>,
 }
 impl SmbConnectScreen {
     pub fn new(entry: EntryId) -> Self {
@@ -57,7 +58,7 @@ impl SmbConnectScreen {
             user: TextBuffer::new(String::new(), 0),
             password: TextBuffer::new(String::new(), 0),
             form, controller: BrowseController::new(),
-            shares: Vec::new(), rows: Vec::new(), selected: 0, error: None, connecting: false, editing: None,
+            shares: Vec::new(), rows: Vec::new(), selected: 0, error: None, connecting: false, editing: None, playback: None,
         }
     }
     fn buffer(&self, field: u32) -> &TextBuffer {
@@ -148,14 +149,37 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
  type Ev=ScreenEvent<H>;
  fn step(&mut self,ev:&Self::Ev,_cx:&Cx<'_,H>,fx:&mut Effects<'_,H>)->Handled {
   match ev {
-   ScreenEvent::Tick(_)=>{if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;} Handled::Yes}
+   ScreenEvent::Tick(_)=>{
+    if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;}
+    if let Some(rx)=self.playback.as_ref(){
+     match rx.try_recv(){
+      Ok(Ok(prepared))=>{self.playback=None;self.connecting=false;fx.push(Fx::App(crate::registry::AppFx::SmbPlaybackReady(prepared)));}
+      Ok(Err(error))=>{self.playback=None;self.connecting=false;self.error=Some(format!("Could not prepare video: {error}"));}
+      Err(std::sync::mpsc::TryRecvError::Empty)=>{self.connecting=true;}
+      Err(std::sync::mpsc::TryRecvError::Disconnected)=>{self.playback=None;self.connecting=false;self.error=Some("The video preparation worker stopped unexpectedly".into());}
+     }
+    }
+    Handled::Yes
+   }
    ScreenEvent::Activate(elem) => {
     match *elem {
      HOST|PORT|USER|PASSWORD => self.set_editing(if self.editing==Some(*elem){None}else{Some(*elem)},fx),
      GUEST => { self.form.guest=!self.form.guest; if self.form.guest { self.set_editing(None,fx); } fx.invalidate(plx_machine::present::Provenance::Input); }
      CONNECT => { self.set_editing(None,fx); if let Err(e)=self.connect(){self.error=Some(e);} }
      e if e>=SHARE_BASE && !self.shares.is_empty() && self.controller.phase()!=Phase::Browsing => { let i=(e-SHARE_BASE) as usize; if let Some(share)=self.shares.get(i){ self.controller.select_share(&share.name); self.connecting=true; self.error=None; } }
-     e if e>=SHARE_BASE && self.controller.phase()==Phase::Browsing => { let i=(e-SHARE_BASE) as usize; self.selected=i; match self.controller.activate(){ Activation::None=>{}, Activation::Play(_play)=>{self.error=Some("Playback handoff is being integrated. Browsing is active.".into());} } }
+     e if e>=SHARE_BASE && self.controller.phase()==Phase::Browsing => {
+      let i=(e-SHARE_BASE) as usize; self.selected=i;
+      match self.controller.activate(){
+       Activation::None=>{},
+       Activation::Play(play)=>{
+        if self.playback.is_some(){self.error=Some("A video is already being prepared".into());}
+        else {match plx_smb::controller::spawn_prepare(play){
+         Ok(rx)=>{self.playback=Some(rx);self.connecting=true;self.error=None;}
+         Err(error)=>{self.error=Some(error);self.connecting=false;}
+        }}
+       }
+      }
+     }
      _=>{}
     }
     Handled::Yes

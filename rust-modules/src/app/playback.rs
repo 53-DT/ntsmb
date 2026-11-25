@@ -35,6 +35,62 @@ pub(crate) use plx_screens::player::input::{
 pub(crate) use plx_screens::registry::RepeatGate;
 
 
+/// Hand a prepared SMB range source to FinNative's existing native player.
+/// The SMB bridge is retained by the adapter for the full playback lifetime.
+pub(crate) fn start_smb_playback(
+    ps: &mut plx_media::route::PlaybackSession,
+    pa: &mut plx_media::player::adapter::PlayerAdapter,
+    pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>,
+    bridge: &mut super::bridge::Bridge,
+    prepared: plx_smb::playback::PreparedPlayback,
+) -> bool {
+    let item = smb_playing_item(&prepared.probe);
+    let subtitle_count = item.subs.len();
+    pa.set_external_playback(prepared.play, prepared.bridge);
+    plx_media::route::clear_url(ps);
+    let started = start_playback(ps, pa, 0, Origin::Here, HUD_HEADLESS_MS, None, pages, bridge);
+    if started {
+        bridge.metadata_run(plx_data::stores::metadata::MetadataCmd::InstallPlaying(Some(item)));
+        plx_base::eventlog::log(&format!(
+            "smb: native playback started; embedded subtitle tracks={subtitle_count}"
+        ));
+    } else {
+        pa.clear_external_playback();
+        plx_base::eventlog::log("smb: native player refused the prepared file");
+    }
+    started
+}
+
+fn smb_playing_item(probe: &plx_play_feed::SourceProbe) -> plx_data::metadata::PlayingItem {
+    let subs = probe.subtitles.iter().map(|subtitle| plx_data::metadata::Stream {
+        id: i64::from(subtitle.stream_index).saturating_add(1).max(1),
+        index: i64::from(subtitle.stream_index),
+        lang_code: subtitle.language.clone(),
+        codec: subtitle.codec.clone(),
+        title: subtitle.title.clone(),
+        external: false,
+        ..Default::default()
+    }).collect();
+    plx_data::metadata::PlayingItem {
+        sid: plx_plex::plex::ServerId::from_raw(0),
+        rk: "smb-local".into(),
+        show_rk: String::new(),
+        kind: "movie".into(),
+        duration_ms: (probe.duration_ns > 0).then_some(probe.duration_ns / 1_000_000),
+        audio: Vec::new(),
+        subs,
+        video_fps: 0.0,
+        width: i64::from(probe.width),
+        height: i64::from(probe.height),
+        bitrate: 0,
+        video_kbps: 0,
+        dovi: Default::default(),
+        markers: Vec::new(),
+        chapters: Vec::new(),
+        hdr: false,
+    }
+}
+
 /// The foreground restore of a paused film still owes its re-pause: the session's readout holds it
 /// (`ReadoutEvent::ResumePending`, closed with the preroll).
 #[inline]

@@ -80,6 +80,9 @@ pub enum AppFx {
     Player(PlayerReq),
     /// The item context menu's committed row (phase 10) — see [`ItemMenuReq`].
     ItemMenu(ItemMenuReq),
+    /// A prepared SMB source, handed to the existing native player by the app runner.
+    /// This is live-only: it contains a loopback bridge handle and is never recorded.
+    SmbPlaybackReady(plx_smb::playback::PreparedPlayback),
     /// The player-HUD page's commands on the package store, executed by the Bridge (PR10).
     Huds(HudCmd),
 }
@@ -127,6 +130,7 @@ pub enum ExternalAppFx {
     Catalog(crate::catalog::CatalogOut),
     Player(PlayerReq),
     ItemMenu(ItemMenuReq),
+    SmbPlaybackReady(plx_smb::playback::PreparedPlayback),
 }
 
 impl plx_machine::machine::AppEffect for AppFx {
@@ -152,6 +156,7 @@ impl plx_machine::machine::AppEffect for AppFx {
             Self::Catalog(v) => External(ExternalAppFx::Catalog(v)),
             Self::Player(v) => External(ExternalAppFx::Player(v)),
             Self::ItemMenu(v) => External(ExternalAppFx::ItemMenu(v)),
+            Self::SmbPlaybackReady(v) => External(ExternalAppFx::SmbPlaybackReady(v)),
         }
     }
 }
