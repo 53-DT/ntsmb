@@ -228,9 +228,12 @@ impl LogicalState for SmbConnectScreen {
 impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> for SmbConnectScreen {
  type Ev=ScreenEvent<H>;
  fn step(&mut self,ev:&Self::Ev,_cx:&Cx<'_,H>,fx:&mut Effects<'_,H>)->Handled {
+  if self.controller.phase()==Phase::Browsing {
+   let src=SmbCardSource{rows:&self.rows};
+   let _=self.browser_grid.on(ev,_cx,&src,fx);
+  }
   match ev {
    ScreenEvent::Tick(_)=>{
-    if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows}; let _=self.browser_grid.on(ev,_cx,&src,fx); }
     if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;}
     if let Some(rx)=self.playback.as_ref(){
      match rx.try_recv(){
@@ -302,7 +305,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
     }
     _=>Handled::No
    },
-   ScreenEvent::FocusMoved{to,..}=>{if self.controller.phase()==Phase::Browsing {let src=SmbCardSource{rows:&self.rows};let _=self.browser_grid.on(ev,_cx,&src,fx);} if self.editing.is_some_and(|e|e!=to.elem){self.set_editing(None,fx);} if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);self.selected=next;} Handled::Yes}
+   ScreenEvent::FocusMoved{to,..}=>{if self.editing.is_some_and(|e|e!=to.elem){self.set_editing(None,fx);} if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);self.selected=next;} Handled::Yes}
    ScreenEvent::WillLeave(_)|ScreenEvent::Cover|ScreenEvent::Suspend|ScreenEvent::Unmount=>{self.set_editing(None,fx);Handled::No}
    _=>Handled::No
   }
@@ -333,7 +336,10 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(self.ids().iter().position(|e|e==elem).unwrap_or(0) as u32)})
  }
  fn reconcile(&self,want:FocusKey<u32>,_cx:&Cx<'_,H>)->FocusKey<u32>{if self.ids().contains(&want.elem){want}else{FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}}}
- fn seat(&self,_g:plx_machine::machine::GroupId,_from:Placed,_cx:&Cx<'_,H>)->FocusKey<u32>{FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}}
+ fn seat(&self,_g:plx_machine::machine::GroupId,from:Placed,_cx:&Cx<'_,H>)->FocusKey<u32>{
+  if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows}; if let Some(key)=self.browser_grid.seat(&src,from){return key;} }
+  FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}
+ }
 }
 impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> for SmbConnectScreen {
  fn name(&self)->&'static str{"smb_connect"}
