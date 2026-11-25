@@ -69,6 +69,7 @@ pub struct SavedStore {
     candidates: Vec<PathBuf>,
     data: SavedFile,
     temporary: AtomicBool,
+    runtime_dir: Option<PathBuf>,
 }
 
 impl SavedStore {
@@ -76,6 +77,10 @@ impl SavedStore {
     /// A file that exists but cannot be understood is moved aside (`.corrupt`) rather than
     /// silently overwritten, and the store starts empty.
     pub fn open(candidates: Vec<PathBuf>) -> Self {
+        Self::open_with_runtime(candidates, None)
+    }
+
+    pub fn open_with_runtime(candidates: Vec<PathBuf>, runtime_dir: Option<PathBuf>) -> Self {
         let mut data = SavedFile::empty();
         let mut temporary = false;
         for path in &candidates {
@@ -83,8 +88,7 @@ impl SavedStore {
                 Ok(text) => match Self::parse(&text) {
                     Some(parsed) => {
                         data = parsed;
-                        let runtime = plx_base::paths::runtime_dir();
-                        temporary = path.parent() == Some(runtime.as_path());
+                        temporary = runtime_dir.as_deref().is_some_and(|runtime| path.parent() == Some(runtime));
                         break;
                     }
                     None => {
@@ -96,7 +100,7 @@ impl SavedStore {
                 Err(_) => continue,
             }
         }
-        Self { candidates, data, temporary: AtomicBool::new(temporary) }
+        Self { candidates, data, temporary: AtomicBool::new(temporary), runtime_dir }
     }
 
     fn parse(text: &str) -> Option<SavedFile> {
@@ -200,10 +204,10 @@ impl SavedStore {
 
     pub fn save(&self) -> Result<(), String> {
         let text = serde_json::to_string_pretty(&self.data).map_err(|_| "Could not encode saved servers".to_string())?;
-        let runtime = plx_base::paths::runtime_dir();
         for path in &self.candidates {
             if write_atomic(path, text.as_bytes()).is_ok() {
-                self.temporary.store(path.parent() == Some(runtime.as_path()), Ordering::Relaxed);
+                let temporary = self.runtime_dir.as_deref().is_some_and(|runtime| path.parent() == Some(runtime));
+                self.temporary.store(temporary, Ordering::Relaxed);
                 return Ok(());
             }
         }

@@ -98,7 +98,7 @@ impl SmbConnectScreen {
                 path.with_file_name(format!("{prefix}ntsmb-connections.json"))
             })
             .collect();
-        let saved = plx_smb::store::SavedStore::open(saved_paths);
+        let saved = plx_smb::store::SavedStore::open_with_runtime(saved_paths, Some(plx_base::paths::runtime_dir().to_path_buf()));
         let saved_view = !saved.connections().is_empty();
         Self {
             entry, host: TextBuffer::new(String::new(), 0),
