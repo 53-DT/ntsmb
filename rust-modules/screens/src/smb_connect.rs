@@ -381,7 +381,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
    ScreenEvent::Tick(t)=>{
     let focus=_cx.focus.current.map(|key|key.elem);
     self.profile_pop.step((focus==Some(PROFILE)).then_some(0),t.dt());
-    let menu_focus=focus.and_then(|elem|[MENU_SAVED,MENU_ADD,MENU_DISCONNECT,MENU_LOCK,MENU_CLOSE].iter().position(|id|*id==elem));
+    let menu_focus=focus.and_then(|elem|[MENU_SAVED,MENU_ADD,MENU_DISCONNECT,MENU_CLOSE].iter().position(|id|*id==elem));
     self.menu_pop.step(menu_focus,t.dt());
     if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;
     if let Some(rx)=self.playback.as_ref(){
