@@ -9,7 +9,6 @@
   "icon": "icon.png",
   "largeIcon": "largeIcon.png",
   "iconColor": "#060606",
-  "splashBackground": "splash.png",
   "nativeLifeCycleInterfaceVersion": 2,
   "handlesRelaunch": false,
   "transparent": true,
