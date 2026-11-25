@@ -87,13 +87,11 @@ impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
 impl SmbConnectScreen {
     pub fn new(entry: EntryId) -> Self {
         let form = ConnectForm::new();
-        // Use the same per-install durable locations as the HUD store, whose webOS
-        // candidate order is device-tested. Do not offer the runtime (/tmp) candidate:
-        // Saved SMB credentials must never appear to save successfully and then vanish
-        // when the TV restarts.
+        // Use the HUD store's device-tested order: persistent locations first and
+        // the app's /tmp runtime directory last. That final fallback survives closing and
+        // reopening the app; SavedStore marks it as temporary so the UI warns about TV reboots.
         let saved_paths: Vec<std::path::PathBuf> = plx_base::paths::hud_candidates()
             .into_iter()
-            .filter(|path| path.parent() != Some(plx_base::paths::runtime_dir()))
             .map(|path| {
                 let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("huds");
                 let prefix = file_name.strip_suffix("huds").unwrap_or("");
@@ -108,7 +106,7 @@ impl SmbConnectScreen {
             user: TextBuffer::new(String::new(), 0),
             password: TextBuffer::new(String::new(), 0),
             form, controller: BrowseController::new(),
-            shares: Vec::new(), rows: Vec::new(), selected: 0, error: None, connecting: false, editing: None, playback: None,
+            shares: Vec::new(), rows: Vec::new(), selected: 0, error: saved.saved_temporarily().then(|| "Saved in temporary TV storage; it may be lost after a TV restart".into()), connecting: false, editing: None, playback: None,
             saved, save_pending: false, saved_id: None, last_saved_path: String::new(),
             saved_view, resume_path: None,
             browser_grid: Grid::new(entry, GridSpec::resting(324.0).columns(6, RowStyle { gap: (SCR_W - 2.0 * MARGIN_X - 44.0 - 6.0 * CARD_W) / 5.0, ..RowStyle::HOME }, MARGIN_X)),
@@ -168,7 +166,7 @@ impl SmbConnectScreen {
         if self.save_pending && matches!(self.controller.phase(), Phase::PickShare | Phase::Browsing) {
             self.save_pending = false;
             match self.form.saved_profile().and_then(|profile| self.saved.upsert(profile)) {
-                Ok(id) => { self.saved_id = Some(id); self.saved_view = false; if let Err(error) = self.saved.save() { self.error = Some(error); } }
+                Ok(id) => { self.saved_id = Some(id); self.saved_view = false; if let Err(error) = self.saved.save() { self.error = Some(error); } else if self.saved.saved_temporarily() { self.error = Some("Saved in temporary TV storage; it may be lost after a TV restart".into()); } }
                 Err(error) => { self.error = Some(format!("Connected, but could not save this server: {error}")); }
             }
         }

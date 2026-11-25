@@ -18,6 +18,7 @@
 
 use crate::profile::ConnectionProfile;
 use serde::{Deserialize, Serialize};
+use std::cell::Cell;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -67,6 +68,7 @@ pub fn connection_id(profile: &ConnectionProfile) -> String {
 pub struct SavedStore {
     candidates: Vec<PathBuf>,
     data: SavedFile,
+    temporary: Cell<bool>,
 }
 
 impl SavedStore {
@@ -75,11 +77,14 @@ impl SavedStore {
     /// silently overwritten, and the store starts empty.
     pub fn open(candidates: Vec<PathBuf>) -> Self {
         let mut data = SavedFile::empty();
+        let mut temporary = false;
         for path in &candidates {
             match fs::read_to_string(path) {
                 Ok(text) => match Self::parse(&text) {
                     Some(parsed) => {
                         data = parsed;
+                        let runtime = plx_base::paths::runtime_dir();
+                        temporary = path.parent() == Some(runtime.as_path());
                         break;
                     }
                     None => {
@@ -91,7 +96,7 @@ impl SavedStore {
                 Err(_) => continue,
             }
         }
-        Self { candidates, data }
+        Self { candidates, data, temporary: Cell::new(temporary) }
     }
 
     fn parse(text: &str) -> Option<SavedFile> {
@@ -189,10 +194,16 @@ impl SavedStore {
 
     /// Write to the first candidate that can be written. The error never names a path or a
     /// credential, because it can reach the screen and the log.
+    pub fn saved_temporarily(&self) -> bool {
+        self.temporary.get()
+    }
+
     pub fn save(&self) -> Result<(), String> {
         let text = serde_json::to_string_pretty(&self.data).map_err(|_| "Could not encode saved servers".to_string())?;
+        let runtime = plx_base::paths::runtime_dir();
         for path in &self.candidates {
             if write_atomic(path, text.as_bytes()).is_ok() {
+                self.temporary.set(path.parent() == Some(runtime.as_path()));
                 return Ok(());
             }
         }
