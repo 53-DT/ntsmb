@@ -742,6 +742,8 @@ fn draw_title(f: &Frame<'_>, row: &mut HudMotion, q: Painter, kicker: Option<Tit
         let words = |ptr: *const std::os::raw::c_char| if ptr.is_null() { String::new() } else { unsafe { std::ffi::CStr::from_ptr(ptr) }.to_string_lossy().into_owned() };
         let (context, title) = if let Some(n) = f.meta.now_playing().filter(|n| n.is_real_episode) {
             (plx_ui::fmt::episode_kicker(n.season, n.index, &n.ep_title), n.title.clone())
+        } else if f.meta.playing().is_some_and(|item| item.rk == "smb-local") {
+            (String::new(), f.meta.now_playing().map(|n| n.title.clone()).unwrap_or_default())
         } else {
             (words(plx_media::route::ctxline_cptr(f.ps)), words(plx_media::route::title_cptr(f.ps)))
         };
@@ -771,6 +773,16 @@ fn draw_title(f: &Frame<'_>, row: &mut HudMotion, q: Painter, kicker: Option<Tit
         // an interior-NUL title drew nothing before the title was factored out: it still does
         if let Ok(title) = CString::new(n.title.clone()) {
             draw_player_title_at(q, look, Kicker::Episode(kicker.as_ptr()), title.as_ptr(), right, f.measure, paused, &row.title_clock);
+        }
+    } else if f.meta.playing().is_some_and(|item| item.rk == "smb-local") {
+        let empty_context = CString::new("").unwrap_or_default();
+        if let Some(now) = f.meta.now_playing() {
+            if let Ok(title) = CString::new(now.title.clone()) {
+                draw_player_title_at(
+                    q, look, Kicker::Context(empty_context.as_ptr()), title.as_ptr(),
+                    right, f.measure, paused, &row.title_clock,
+                );
+            }
         }
     } else {
         draw_player_title_at(

@@ -80,9 +80,11 @@ impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
  fn elem(&self,i:usize)->u32 { SHARE_BASE+i as u32 }
  fn index_of(&self,e:&u32)->Option<usize> { e.checked_sub(SHARE_BASE).map(|i|i as usize).filter(|i|*i<self.rows.len()) }
  fn art(&self,_i:usize)->Art<'_> { Art::Poster(None) }
- fn label(&self,i:usize)->TileLabel {
-  let Some(row)=self.rows.get(i) else{return TileLabel::default()};
-  TileLabel { title:Some(CString::new(row.entry.name.as_str()).unwrap_or_default()), caption:Some(CString::new(if row.is_video{"Video"}else{"Folder"}).unwrap_or_default()), ..TileLabel::default() }
+ fn label(&self,_i:usize)->TileLabel {
+  // SMB tiles draw every filename in the same fixed-width band from overlay().
+  // Leaving the shared TileLabel empty prevents its focused-title marquee from
+  // expanding across neighbouring icons.
+  TileLabel::default()
  }
  fn a11y_title(&self,i:usize)->Option<Cow<'_,str>> { self.rows.get(i).map(|r|Cow::Borrowed(r.entry.name.as_str())) }
  fn overlay(&self,p:plx_ui::Painter,i:usize,tile:&Tile,measure:&dyn Measure) {
@@ -90,12 +92,15 @@ impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
   let glyph=CString::new(if row.is_video{"▶"}else{"📁"}).unwrap();
   let frame=Rect::new(tile.rect.x,tile.rect.y+tile.rect.h*0.22,tile.rect.w,tile.rect.h*0.48);
   Label::new(glyph.as_ptr(),96,if row.is_video{[0.88,0.91,0.96,1.0]}else{[0.98,0.72,0.25,1.0]}).h(HAlign::Center).draw(p,frame);
-  if i / 6 != self.selected / 6 {
-   let width=(tile.rect.w-20.0).max(1.0);
-   let (fitted,_)=measure.fit_line_measured(&row.entry.name,width,theme::size::LABEL,false);
-   let band=Rect::new(tile.rect.x+10.0,tile.rect.y+tile.rect.h+8.0,width,28.0);
-   Label::new(fitted.as_ptr(),theme::size::LABEL,theme::TEXT_SECONDARY).h(HAlign::Center).draw(p,band);
-  }
+
+  // Every tile gets its own reserved filename band, including the focused row.
+  // The focused name may use the bold face, but it is still measured against
+  // this tile's width and can never spill into the adjacent folder/file icon.
+  let width=(tile.rect.w-24.0).max(1.0);
+  let (fitted,_)=measure.fit_line_measured(&row.entry.name,width,theme::size::LABEL,tile.focused);
+  let band=Rect::new(tile.rect.x+12.0,tile.rect.y+tile.rect.h+8.0,width,32.0);
+  Label::new(fitted.as_ptr(),theme::size::LABEL,if tile.focused{theme::TEXT_PRIMARY}else{theme::TEXT_SECONDARY})
+   .h(HAlign::Center).draw(p,band);
  }
 }
 impl SmbConnectScreen {
@@ -125,7 +130,7 @@ impl SmbConnectScreen {
             shares: Vec::new(), rows: Vec::new(), selected: 0, error: saved.saved_temporarily().then(|| "Saved in temporary TV storage; it may be lost after a TV restart".into()), connecting: false, editing: None, playback: None,
             saved, save_pending: false, saved_id: None, last_saved_path: String::new(),
             saved_view, resume_path: None,
-            browser_grid: Grid::new(entry, GridSpec::resting(324.0).columns(6, RowStyle { h: CARD_W * 0.75, gap: (SCR_W - 2.0 * MARGIN_X - 44.0 - 6.0 * CARD_W) / 5.0, ..RowStyle::HOME }, MARGIN_X)),
+            browser_grid: Grid::new(entry, GridSpec::resting(324.0).columns(6, RowStyle { h: CARD_W * 0.75, under_tile: 16.0, gap: (SCR_W - 2.0 * MARGIN_X - 44.0 - 6.0 * CARD_W) / 5.0, ..RowStyle::HOME }, MARGIN_X)),
             saved_row: AvatarRow::new(),
         }
     }
@@ -474,7 +479,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   }
   if self.controller.phase()==Phase::Browsing && !self.rows.is_empty() {
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Grid{cols:6,holes:&[]},seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Geometric;4],extent:Rect::new(MARGIN_X,324.0,SCR_W-2.0*MARGIN_X,CARD_W*0.75),len:self.rows.len(),elem:ElemKind::Card});
-   out.push(GroupSpec{id:PROFILE_GROUP,kind:GroupKind::Free,seat:Seat::Remembered,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent:Self::profile_rect(),len:1,elem:ElemKind::Bare});
+   out.push(GroupSpec{id:PROFILE_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent:Self::profile_rect(),len:1,elem:ElemKind::Bare});
   } else {
    let extent=ids.iter().filter_map(|e|self.stop_rect(*e,cx.measure)).reduce(|a,b|a.union(b)).unwrap_or(Rect::FULL);
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent,len:ids.len(),elem:ElemKind::Bare});
