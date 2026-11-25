@@ -335,6 +335,18 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  fn group_of(&self,elem:&u32,_cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{self.ids().contains(elem).then_some(FORM_GROUP)}
  fn neighbour(&self,key:FocusKey<u32>,dir:Dir,_cx:&Cx<'_,H>)->Step<u32>{
   if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.neighbour::<H,_>(&src,key,dir); }
+  // The three actions share one horizontal row. Declare their D-pad links explicitly
+  // before the general geometric search so remote navigation follows their actual layout.
+  let horizontal = match (key.elem, dir) {
+   (CONNECT, Dir::Right) => Some(GUEST),
+   (GUEST, Dir::Left) => Some(CONNECT),
+   (GUEST, Dir::Right) => Some(SAVE),
+   (SAVE, Dir::Left) => Some(GUEST),
+   _ => None,
+  };
+  if let Some(elem)=horizontal.filter(|elem|self.ids().contains(elem)) {
+   return Step::Move(FocusKey{entry:self.entry,elem});
+  }
   let ids=self.ids();
   let Some(from)=Self::stop_rect(key.elem,_cx.measure) else{return Step::Edge};
   let mut best:Option<(f32,u32)>=None;
