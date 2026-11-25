@@ -99,14 +99,16 @@ impl SmbConnectScreen {
         // Use the HUD store's device-tested order: persistent locations first and
         // the app's /tmp runtime directory last. That final fallback survives closing and
         // reopening the app; SavedStore marks it as temporary so the UI warns about TV reboots.
-        let saved_paths: Vec<std::path::PathBuf> = plx_base::paths::hud_candidates()
-            .into_iter()
-            .map(|path| {
-                let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("huds");
-                let prefix = file_name.strip_suffix("huds").unwrap_or("");
-                path.with_file_name(format!("{prefix}ntsmb-connections.json"))
-            })
-            .collect();
+        // Use the platform's dedicated persistent state root first, then retain the HUD-derived
+        // fallbacks for installs whose state-root directory is not writable. Runtime storage is last.
+        let mut saved_paths = vec![plx_base::paths::persistent_state_root().join("ntsmb-connections.json")];
+        saved_paths.extend(plx_base::paths::hud_candidates().into_iter().filter(|path| path.parent() != Some(plx_base::paths::runtime_dir())).map(|path| {
+            let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("huds");
+            let prefix = file_name.strip_suffix("huds").unwrap_or("");
+            path.with_file_name(format!("{prefix}ntsmb-connections.json"))
+        }));
+        saved_paths.push(plx_base::paths::runtime_dir().join("ntsmb-connections.json"));
+        saved_paths.dedup();
         let saved = plx_smb::store::SavedStore::open_with_runtime(saved_paths, Some(plx_base::paths::runtime_dir().to_path_buf()));
         let saved_view = !saved.connections().is_empty();
         Self {
@@ -174,9 +176,26 @@ impl SmbConnectScreen {
         if let Some(error) = self.controller.browser().error() { self.error = Some(error.to_owned()); }
         if self.save_pending && matches!(self.controller.phase(), Phase::PickShare | Phase::Browsing) {
             self.save_pending = false;
-            match self.form.saved_profile().and_then(|profile| self.saved.upsert(profile)) {
-                Ok(id) => { self.saved_id = Some(id); self.saved_view = false; if let Err(error) = self.saved.save() { self.error = Some(error); } else if self.saved.saved_temporarily() { self.error = Some("Saved in temporary TV storage; it may be lost after a TV restart".into()); } }
-                Err(error) => { self.error = Some(format!("Connected, but could not save this server: {error}")); }
+            let profile_result = self.form.saved_profile();
+            match profile_result {
+                Ok(profile) => match self.saved.upsert(profile) {
+                    Ok(id) => { self.saved_id = Some(id); self.saved_view = false; if let Err(error) = self.saved.save() { self.error = Some(error); } else if self.saved.saved_temporarily() { self.error = Some("Saved in temporary TV storage; it may be lost after a TV restart".into()); } }
+                    Err(error) => { self.error = Some(format!("Connected, but could not save this server: {error}")); }
+                },
+                Err(error) => {
+                    // Keep the IP/username profile even if the TV's secure key manager refuses
+                    // password sealing. Never fall back to writing plaintext; ask for the password
+                    // next launch and make the missing password explicit in the UI.
+                    if self.form.save_connection {
+                        match self.form.validate().and_then(|request| self.saved.upsert(request.profile)) {
+                            Ok(id) => { self.saved_id = Some(id); self.saved_view = false;
+                                if let Err(save_error) = self.saved.save() { self.error = Some(save_error); }
+                                else { self.error = Some(format!("Server saved, but password could not be securely saved: {error}. Enter it again next launch.")); }
+                            }
+                            Err(save_error) => self.error = Some(format!("Connected, but could not save this server: {save_error}")),
+                        }
+                    } else { self.error = Some(format!("Connected, but could not save this server: {error}")); }
+                }
             }
         }
         if let Some(id) = self.saved_id.clone() {
@@ -225,8 +244,8 @@ impl SmbConnectScreen {
             return Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H));
         }
         if field == CHANGE_SERVER {
-            let layout=RouteLayout::screen();
-            return Some(Rect::new(layout.content.x,layout.content.y+self.shares.len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H));
+            let base=Self::rect(HOST,measure)?;
+            return Some(Rect::new(base.x,base.y+self.shares.len() as f32*(FIELD_H+GAP),base.w,FIELD_H));
         }
         if field >= SHARE_BASE && field < SHARE_BASE+self.shares.len() as u32 && self.controller.phase()!=Phase::Browsing {
             let i=(field-SHARE_BASE) as usize;
@@ -460,6 +479,14 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  }
  fn group_of(&self,elem:&u32,_cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{if !self.menu_open && self.controller.phase()==Phase::Browsing && !self.rows.is_empty() && *elem==PROFILE {Some(PROFILE_GROUP)} else {self.ids().contains(elem).then_some(FORM_GROUP)}}
  fn neighbour(&self,key:FocusKey<u32>,dir:Dir,_cx:&Cx<'_,H>)->Step<u32>{
+  if self.menu_open {
+   let menu=[MENU_SAVED,MENU_ADD,MENU_DISCONNECT,MENU_LOCK,MENU_CLOSE];
+   if let Some(i)=menu.iter().position(|e|*e==key.elem) {
+    let next=match dir {Dir::Up=>i.checked_sub(1),Dir::Down=>(i+1<menu.len()).then_some(i+1),_=>None};
+    return next.map_or(Step::Edge,|j|Step::Move(FocusKey{entry:self.entry,elem:menu[j]}));
+   }
+   return Step::Edge;
+  }
   if self.controller.phase()==Phase::Browsing && !self.menu_open {
    if key.elem==PROFILE { return if dir==Dir::Down && !self.rows.is_empty(){Step::Move(FocusKey{entry:self.entry,elem:SHARE_BASE})}else{Step::Edge}; }
    if key.elem>=SHARE_BASE && dir==Dir::Up && (key.elem-SHARE_BASE)<6 { return Step::Move(FocusKey{entry:self.entry,elem:PROFILE}); }
@@ -523,7 +550,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   let r=if *elem>=SAVED_BASE && *elem<REMOVE_BASE {let i=(*elem-SAVED_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),520.0,FIELD_H))}
   else if *elem>=SHARE_BASE && *elem<SHARE_BASE+self.shares.len() as u32 {let i=(*elem-SHARE_BASE) as usize;let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+i as f32*(FIELD_H+GAP),base.w,FIELD_H))}
   else if *elem==NEW_CONNECTION {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
-  else if *elem==CHANGE_SERVER {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.shares.len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
+  else if *elem==CHANGE_SERVER {let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+self.shares.len() as f32*(FIELD_H+GAP),base.w,FIELD_H))}
   else{self.stop_rect(*elem,cx.measure)}?;
   Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(self.ids().iter().position(|e|e==elem).unwrap_or(0) as u32)})
  }
@@ -588,8 +615,9 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
     let id=SHARE_BASE+i as u32; let Some(r)=Self::rect(HOST,measure).map(|r|Rect::new(r.x,r.y+i as f32*(FIELD_H+GAP),r.w,FIELD_H)) else{continue};
     TextField::new(plx_os::i18n::msg::browse_jf_server_c(),&share.name).hot(if focus==Some(id){1.0}else{0.0}).draw(p,r,measure);
    }
-   let change_y=layout.content.y+self.shares.len() as f32*(FIELD_H+GAP);
-   let change_r=Rect::new(layout.content.x,change_y,layout.content.w.min(FIELD_W),FIELD_H);
+   let share_base=Self::rect(HOST,measure).unwrap_or(layout.content);
+   let change_y=share_base.y+self.shares.len() as f32*(FIELD_H+GAP);
+   let change_r=Rect::new(share_base.x,change_y,share_base.w,FIELD_H);
    Button::new(CString::new("Change server / IP").unwrap().as_ptr(),theme::size::BODY,change_r).focused(focus==Some(CHANGE_SERVER)).draw(&Env::inert(),p);
    self.draw_profile_controls(p,measure,focus);
    return;
