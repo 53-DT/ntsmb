@@ -284,7 +284,8 @@ impl SmbConnectScreen {
             return vec![MENU_SAVED, MENU_ADD, MENU_DISCONNECT, MENU_LOCK, MENU_CLOSE];
         }
         if self.controller.phase()==Phase::Browsing {
-            (0..self.rows.len()).map(|i| SHARE_BASE+i as u32).collect()
+            let rows: Vec<u32> = (0..self.rows.len()).map(|i| SHARE_BASE+i as u32).collect();
+            if rows.is_empty() { vec![PROFILE] } else { rows }
         } else if !self.shares.is_empty() {
             (0..self.shares.len()).map(|i| SHARE_BASE + i as u32).chain(std::iter::once(CHANGE_SERVER)).chain(std::iter::once(PROFILE)).collect()
         } else if self.saved_view && !self.saved.connections().is_empty() {
@@ -457,7 +458,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent,len:ids.len(),elem:ElemKind::Bare});
   }
  }
- fn group_of(&self,elem:&u32,_cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{if !self.menu_open && self.controller.phase()==Phase::Browsing && *elem==PROFILE {Some(PROFILE_GROUP)} else {self.ids().contains(elem).then_some(FORM_GROUP)}}
+ fn group_of(&self,elem:&u32,_cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{if !self.menu_open && self.controller.phase()==Phase::Browsing && !self.rows.is_empty() && *elem==PROFILE {Some(PROFILE_GROUP)} else {self.ids().contains(elem).then_some(FORM_GROUP)}}
  fn neighbour(&self,key:FocusKey<u32>,dir:Dir,_cx:&Cx<'_,H>)->Step<u32>{
   if self.controller.phase()==Phase::Browsing && !self.menu_open {
    if key.elem==PROFILE { return if dir==Dir::Down && !self.rows.is_empty(){Step::Move(FocusKey{entry:self.entry,elem:SHARE_BASE})}else{Step::Edge}; }
@@ -465,7 +466,11 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
    let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.neighbour::<H,_>(&src,key,dir);
   }
   if !self.shares.is_empty() {
-   let ids=self.ids();
+   if key.elem==PROFILE {
+    return if dir==Dir::Down && !self.shares.is_empty(){Step::Move(FocusKey{entry:self.entry,elem:SHARE_BASE})}else{Step::Edge};
+   }
+   if key.elem==SHARE_BASE && dir==Dir::Up { return Step::Move(FocusKey{entry:self.entry,elem:PROFILE}); }
+   let ids: Vec<u32> = (0..self.shares.len()).map(|i|SHARE_BASE+i as u32).chain(std::iter::once(CHANGE_SERVER)).collect();
    if let Some(index)=ids.iter().position(|id|*id==key.elem) {
     let target=match dir { Dir::Up=>index.checked_sub(1), Dir::Down=>(index+1<ids.len()).then_some(index+1), _=>None };
     if let Some(next)=target { return Step::Move(FocusKey{entry:self.entry,elem:ids[next]}); }
@@ -522,7 +527,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   else{Self::stop_rect(*elem,cx.measure)}?;
   Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(self.ids().iter().position(|e|e==elem).unwrap_or(0) as u32)})
  }
- fn reconcile(&self,want:FocusKey<u32>,_cx:&Cx<'_,H>)->FocusKey<u32>{if (want.elem==PROFILE && !self.menu_open && self.controller.phase()==Phase::Browsing) || self.ids().contains(&want.elem){want}else{FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}}}
+ fn reconcile(&self,want:FocusKey<u32>,_cx:&Cx<'_,H>)->FocusKey<u32>{if (want.elem==PROFILE && !self.menu_open && self.controller.phase()==Phase::Browsing && !self.rows.is_empty()) || self.ids().contains(&want.elem){want}else{FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}}}
  fn seat(&self,g:plx_machine::machine::GroupId,from:Placed,_cx:&Cx<'_,H>)->FocusKey<u32>{
   if g==PROFILE_GROUP { return FocusKey{entry:self.entry,elem:PROFILE}; }
   if self.controller.phase()==Phase::Browsing && !self.menu_open { let src=SmbCardSource{rows:&self.rows}; if let Some(key)=self.browser_grid.seat::<H,SmbCardSource<'_>>(&src,from){return key;} }
