@@ -3,6 +3,8 @@ use std::borrow::Cow;
 use plx_machine::machine::{Canon,Cx,Edge,Effects,EntryId,FocusKey,Handled,InputKind,Key,LogicalState,Machine,NavOp,Fx};
 use plx_ui::frame::Budget;
 use plx_ui::screen::{At,Focusable,GroupSpec,Dir,Step,Placed,Screen,ScreenEvent,DrawFrame,Scrim,RenderStrategy,FocusSource,HitSource};
+use plx_ui::route_screen::RouteLayout;
+use plx_ui::table_screen::Header;
 use plx_smb::{connect_form::ConnectForm, worker::{Event, SmbWorker}};
 pub const SHAPE: &str = "SmbConnectScreen{host:str,user:str,password_len:u32,guest:bool,connecting:bool,error:bool,shares:usize}";
 /// Initial implementation of the SMB connection surface; drawing/focus integration is WIP.
@@ -68,7 +70,21 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
  fn crumb(&self,_cx:&Cx<'_,H>)->Option<Cow<'_,str>>{None}
  fn prepare(&mut self,_b:&mut Budget,_cx:&Cx<'_,H>){}
  fn scrim(&self)->Scrim{Scrim::NONE}
- fn draw(&mut self,_f:&mut DrawFrame<'_, '_,H>){}
+ fn draw(&mut self,f:&mut DrawFrame<'_, '_,H>){
+  // Give the route a real, visible first frame while the interactive form is being wired.
+  // This deliberately uses the same narrative/header layout as the existing app pages.
+  let layout=RouteLayout::screen();
+  let body=if self.connecting {
+   "Connecting to the SMB server and loading shares…".to_owned()
+  } else if let Some(error)=self.error.as_deref() {
+   format!("Connection failed: {error}")
+  } else if !self.shares.is_empty() {
+   format!("Connected. {} share(s) found.",self.shares.len())
+  } else {
+   "Connect to a network share to browse and play your videos.".to_owned()
+  };
+  Header::new(layout,None,plx_os::i18n::msg::browse_jf_manual_c(),&body).paint(f.narrative_painter(),f.measure);
+ }
  fn render(&self)->RenderStrategy{RenderStrategy::Page}
  fn focus_source(&self)->FocusSource{FocusSource::Engine}
  fn hit_source(&self)->HitSource{HitSource::Engine}
