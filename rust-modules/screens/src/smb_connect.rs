@@ -154,7 +154,8 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
      HOST|PORT|USER|PASSWORD => self.set_editing(if self.editing==Some(*elem){None}else{Some(*elem)},fx),
      GUEST => { self.form.guest=!self.form.guest; if self.form.guest { self.set_editing(None,fx); } fx.invalidate(plx_machine::present::Provenance::Input); }
      CONNECT => { self.set_editing(None,fx); if let Err(e)=self.connect(){self.error=Some(e);} }
-     e if e>=SHARE_BASE && !self.shares.is_empty() && self.controller.phase()!=Phase::Browsing => { let i=(e-SHARE_BASE) as usize; if let Some(share)=self.shares.get(i){ self.controller.select_share(&share.name); self.connecting=true; self.error=None; } }\n     e if e>=SHARE_BASE && self.controller.phase()==Phase::Browsing => { let i=(e-SHARE_BASE) as usize; self.selected=i; match self.controller.activate(){ Activation::None=>{}, Activation::Play(_play)=>{self.error=Some("Playback handoff is being integrated. Browsing is active.".into());} } }
+     e if e>=SHARE_BASE && !self.shares.is_empty() && self.controller.phase()!=Phase::Browsing => { let i=(e-SHARE_BASE) as usize; if let Some(share)=self.shares.get(i){ self.controller.select_share(&share.name); self.connecting=true; self.error=None; } }
+     e if e>=SHARE_BASE && self.controller.phase()==Phase::Browsing => { let i=(e-SHARE_BASE) as usize; self.selected=i; match self.controller.activate(){ Activation::None=>{}, Activation::Play(_play)=>{self.error=Some("Playback handoff is being integrated. Browsing is active.".into());} } }
      _=>{}
     }
     Handled::Yes
