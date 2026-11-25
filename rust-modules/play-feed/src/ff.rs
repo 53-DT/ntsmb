@@ -198,6 +198,14 @@ unsafe fn stream_language(s: *mut AVStream) -> Option<String> {
     stream_tag(s, c"language")
 }
 
+/// Optional IETF/BCP-47 language tag exposed by Matroska LanguageIETF metadata.
+unsafe fn stream_language_tag(s: *mut AVStream) -> String {
+    [c"language_ietf", c"language_tag", c"languageTag"]
+        .into_iter()
+        .find_map(|key| stream_tag(s, key))
+        .unwrap_or_default()
+}
+
 /// One metadata tag of the stream, trimmed, or None when absent or empty. A COPY: the entry
 /// points into the stream's dictionary, which `avformat_close_input` frees.
 unsafe fn stream_tag(s: *mut AVStream, key: &std::ffi::CStr) -> Option<String> {
@@ -397,7 +405,25 @@ pub struct ProbeSubtitle {
     pub codec: String,
     /// ISO-639-2 language tag when present (for example "eng" or "jpn").
     pub language: String,
+    /// Optional IETF/BCP-47 tag when the container supplies one (for example "en-GB").
+    pub language_tag: String,
+    /// The container's own track title, or a stable "Subtitle N" fallback when unnamed.
     pub title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProbeAudio {
+    /// FFmpeg's stream index in the original container (not the audio-only ordinal).
+    pub stream_index: i32,
+    pub codec: String,
+    /// ISO-639-2 language tag when present (for example "eng" or "jpn").
+    pub language: String,
+    /// Optional IETF/BCP-47 tag when the container supplies one.
+    pub language_tag: String,
+    /// The container's own track title, or a stable "Audio N" fallback when unnamed.
+    pub title: String,
+    pub channels: i64,
+    pub sample_rate: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -409,6 +435,8 @@ pub struct SourceProbe {
     pub duration_ns: u64,
     /// Dolby Vision profile, BL compatibility id and EL-present flag.
     pub dovi: Option<(u8, u8, bool)>,
+    /// Embedded audio streams, in container order.
+    pub audio_tracks: Vec<ProbeAudio>,
     /// Embedded subtitle streams, in container order.
     pub subtitles: Vec<ProbeSubtitle>,
 }
@@ -428,14 +456,47 @@ unsafe fn probe_subtitles(fmt: *mut AVFormatContext) -> Vec<ProbeSubtitle> {
         } else {
             std::ffi::CStr::from_ptr(codec_ptr).to_string_lossy().into_owned()
         };
+        let ordinal = subtitles.len() + 1;
+        let title = stream_name(stream);
         subtitles.push(ProbeSubtitle {
             stream_index: stream_index(stream),
             codec,
             language: stream_language(stream).unwrap_or_default(),
-            title: stream_name(stream),
+            language_tag: stream_language_tag(stream),
+            title: if title.is_empty() { format!("Subtitle {ordinal}") } else { title },
         });
     }
     subtitles
+}
+
+unsafe fn probe_audio(fmt: *mut AVFormatContext) -> Vec<ProbeAudio> {
+    let mut audio = Vec::new();
+    let streams = (*fmt).streams;
+    for index in 0..(*fmt).nb_streams as usize {
+        let stream = *streams.add(index);
+        let params = stream_codecpar(stream);
+        if (*params).codec_type != AVMEDIA_TYPE_AUDIO {
+            continue;
+        }
+        let codec_ptr = avcodec_get_name((*params).codec_id);
+        let codec = if codec_ptr.is_null() {
+            String::new()
+        } else {
+            std::ffi::CStr::from_ptr(codec_ptr).to_string_lossy().into_owned()
+        };
+        let ordinal = audio.len() + 1;
+        let title = stream_name(stream);
+        audio.push(ProbeAudio {
+            stream_index: stream_index(stream),
+            codec,
+            language: stream_language(stream).unwrap_or_default(),
+            language_tag: stream_language_tag(stream),
+            title: if title.is_empty() { format!("Audio {ordinal}") } else { title },
+            channels: i64::from((*params).ch_layout.nb_channels.max(0)),
+            sample_rate: i64::from((*params).sample_rate.max(0)),
+        });
+    }
+    audio
 }
 
 /// A seekable byte source used for local/custom-AVIO probes. Implementations must return
@@ -526,6 +587,7 @@ pub fn probe_source(source: Arc<dyn ProbeSource>) -> Result<SourceProbe, String>
         let mut height = 0u16;
         let mut dovi = None;
         let subtitles = probe_subtitles(fmt);
+        let audio_tracks = probe_audio(fmt);
         let streams = (*fmt).streams;
         for index in 0..(*fmt).nb_streams as usize {
             let stream = *streams.add(index);
@@ -551,6 +613,7 @@ pub fn probe_source(source: Arc<dyn ProbeSource>) -> Result<SourceProbe, String>
             video_codec, audio_codec, width, height,
             duration_ns: u64::try_from(duration_us.max(0)).unwrap_or(0).saturating_mul(1_000),
             dovi,
+            audio_tracks,
             subtitles,
         })
     }
@@ -592,6 +655,7 @@ pub fn probe_url(url: &str) -> Result<SourceProbe, String> {
         let mut height = 0u16;
         let mut dovi = None;
         let subtitles = probe_subtitles(fmt);
+        let audio_tracks = probe_audio(fmt);
         let streams = (*fmt).streams;
 
         for index in 0..(*fmt).nb_streams as usize {
@@ -635,6 +699,7 @@ pub fn probe_url(url: &str) -> Result<SourceProbe, String> {
             height,
             duration_ns: u64::try_from(duration_us.max(0)).unwrap_or(0).saturating_mul(1_000),
             dovi,
+            audio_tracks,
             subtitles,
         })
     }

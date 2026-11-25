@@ -62,13 +62,37 @@ pub(crate) fn start_smb_playback(
     started
 }
 
+fn smb_language_name(tag: &str) -> String {
+    let tag = tag.trim();
+    if tag.is_empty() || tag.eq_ignore_ascii_case("und") || tag.eq_ignore_ascii_case("zxx") {
+        return "Unknown".into();
+    }
+    let code = plx_data::metadata::two_letter_code(tag).unwrap_or_else(|| tag.to_owned());
+    plx_plex::plex::languages::label(&code).to_string()
+}
+
 fn smb_playing_item(probe: &plx_play_feed::SourceProbe, file_name: &str) -> (plx_data::metadata::PlayingItem, plx_data::metadata::NowPlaying) {
     let subs = probe.subtitles.iter().map(|subtitle| plx_data::metadata::Stream {
         id: i64::from(subtitle.stream_index).saturating_add(1).max(1),
         index: i64::from(subtitle.stream_index),
+        lang: smb_language_name(&subtitle.language),
         lang_code: subtitle.language.clone(),
+        language_tag: subtitle.language_tag.clone(),
         codec: subtitle.codec.clone(),
         title: subtitle.title.clone(),
+        external: false,
+        ..Default::default()
+    }).collect();
+    let audio = probe.audio_tracks.iter().map(|track| plx_data::metadata::Stream {
+        id: i64::from(track.stream_index).saturating_add(1).max(1),
+        index: i64::from(track.stream_index),
+        lang: smb_language_name(&track.language),
+        lang_code: track.language.clone(),
+        language_tag: track.language_tag.clone(),
+        codec: track.codec.clone(),
+        channels: track.channels,
+        sampling_rate: track.sample_rate,
+        title: track.title.clone(),
         external: false,
         ..Default::default()
     }).collect();
@@ -78,7 +102,7 @@ fn smb_playing_item(probe: &plx_play_feed::SourceProbe, file_name: &str) -> (plx
         show_rk: String::new(),
         kind: "movie".into(),
         duration_ms: (probe.duration_ns > 0).then_some(probe.duration_ns / 1_000_000),
-        audio: Vec::new(),
+        audio,
         subs,
         video_fps: 0.0,
         width: i64::from(probe.width),
