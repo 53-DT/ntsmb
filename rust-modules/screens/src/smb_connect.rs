@@ -214,10 +214,19 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
    else{"Enter your server details to browse and play videos.".to_owned()};
   layout.draw_narrative(p,None,title,&body,measure);
   let focus=f.focus.current.map(|k|k.elem);
+  if self.controller.phase()==Phase::Browsing {
+   layout.draw_narrative(p,None,"SMB Browser",&self.controller.location(),measure);
+   for (i,row) in self.rows.iter().enumerate(){
+    let id=SHARE_BASE+i as u32; let Some(r)=Self::rect(HOST,measure).map(|r|Rect::new(r.x,r.y+i as f32*(FIELD_H+GAP),r.w,FIELD_H)) else{continue};
+    let name=if row.is_video {format!("▶ {}",row.entry.name)} else {format!("📁 {}",row.entry.name)};
+    TextField::new(plx_os::i18n::msg::browse_jf_server_c(),&name).hot(if focus==Some(id){1.0}else{0.0}).draw(p,r,measure);
+   }
+   return;
+  }
   if !self.shares.is_empty(){
    for (i,share) in self.shares.iter().enumerate(){
     let id=SHARE_BASE+i as u32; let Some(r)=Self::rect(HOST,measure).map(|r|Rect::new(r.x,r.y+i as f32*(FIELD_H+GAP),r.w,FIELD_H)) else{continue};
-    TextField::new(plx_os::i18n::msg::browse_jf_server_c(),&name).hot(if focus==Some(id){1.0}else{0.0}).draw(p,r,measure);
+    TextField::new(plx_os::i18n::msg::browse_jf_server_c(),&share.name).hot(if focus==Some(id){1.0}else{0.0}).draw(p,r,measure);
    }
    return;
   }
