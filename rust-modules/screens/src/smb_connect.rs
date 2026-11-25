@@ -137,8 +137,8 @@ impl SmbConnectScreen {
                 if let Err(error) = self.saved.save() { self.error = Some(error); }
             }
             if let Some(share) = self.controller.share() {
-                self.saved.set_share(&id, Some(share));
-                if let Err(error) = self.saved.save() { self.error = Some(error); }
+                let changed = self.saved.get(&id).is_some_and(|entry| entry.profile.share.as_deref() != Some(share));
+                if changed { self.saved.set_share(&id, Some(share)); if let Err(error) = self.saved.save() { self.error = Some(error); } }
             }
         }
         Ok(())
@@ -218,8 +218,9 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
        self.form.save_connection=true; self.saved_id=Some(saved.id.clone());
        self.saved.mark_used(&saved.id); let _=self.saved.save();
        self.controller.resume_in(&saved.last_path);
+       self.saved_view=false;
        if !saved.profile.guest && self.form.password.is_empty(){self.error=Some("Enter the password for this saved server".into());self.set_editing(Some(PASSWORD),fx);}
-       else {self.saved_view=false; if let Err(error)=self.connect(){self.error=Some(error);}}
+       else {if let Err(error)=self.connect(){self.error=Some(error);}}
        fx.invalidate(plx_machine::present::Provenance::Input);
       }
      }
@@ -277,7 +278,8 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  }
  fn place(&self,elem:&u32,cx:&Cx<'_,H>,_at:At)->Option<Placed>{
   let r=if *elem>=SAVED_BASE {let i=(*elem-SAVED_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
-  else if *elem>=SHARE_BASE {let i=(*elem-SHARE_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}else{Self::stop_rect(*elem,cx.measure)}?;
+  else if *elem>=SHARE_BASE {let i=(*elem-SHARE_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
+  else if *elem==NEW_CONNECTION {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}else{Self::stop_rect(*elem,cx.measure)}?;
   Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(self.ids().iter().position(|e|e==elem).unwrap_or(0) as u32)})
  }
  fn reconcile(&self,want:FocusKey<u32>,_cx:&Cx<'_,H>)->FocusKey<u32>{if self.ids().contains(&want.elem){want}else{FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}}}
