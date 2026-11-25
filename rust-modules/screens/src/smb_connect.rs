@@ -40,8 +40,7 @@ const PROFILE: u32 = 19;
 const MENU_SAVED: u32 = 20;
 const MENU_ADD: u32 = 21;
 const MENU_DISCONNECT: u32 = 22;
-const MENU_LOCK: u32 = 23;
-const MENU_CLOSE: u32 = 24;
+const MENU_CLOSE: u32 = 23;
 const REMOVE_BASE: u32 = 300;
 const FORM_GROUP: plx_machine::machine::GroupId = plx_machine::machine::GroupId(0);
 const PROFILE_GROUP: plx_machine::machine::GroupId = plx_machine::machine::GroupId(1);
@@ -76,7 +75,7 @@ pub struct SmbConnectScreen {
     browser_grid: Grid,
     // Reuse FinNative's spring-based control lift for the Profile toggle and its menu items.
     profile_pop: CtlPop<1>,
-    menu_pop: CtlPop<5>,
+    menu_pop: CtlPop<4>,
 }
 
 struct SmbCardSource<'a> { rows: &'a [plx_smb::browser::BrowserEntry] }
@@ -259,8 +258,7 @@ impl SmbConnectScreen {
         if field == MENU_SAVED { return Some(Self::menu_rect(0)); }
         if field == MENU_ADD { return Some(Self::menu_rect(1)); }
         if field == MENU_DISCONNECT { return Some(Self::menu_rect(2)); }
-        if field == MENU_LOCK { return Some(Self::menu_rect(3)); }
-        if field == MENU_CLOSE { return Some(Self::menu_rect(4)); }
+        if field == MENU_CLOSE { return Some(Self::menu_rect(3)); }
         let r = Self::rect(field, measure)?;
         Some(if Self::field(field) { plx_ui::text_field::plate(r) } else { r })
     }
@@ -303,7 +301,7 @@ impl SmbConnectScreen {
     }
     fn ids(&self) -> Vec<u32> {
         if self.menu_open {
-            return vec![MENU_SAVED, MENU_ADD, MENU_DISCONNECT, MENU_LOCK, MENU_CLOSE];
+            return vec![MENU_SAVED, MENU_ADD, MENU_DISCONNECT, MENU_CLOSE];
         }
         if self.controller.phase()==Phase::Browsing {
             let rows: Vec<u32> = (0..self.rows.len()).map(|i| SHARE_BASE+i as u32).collect();
@@ -318,7 +316,13 @@ impl SmbConnectScreen {
     }
     fn profile_rect() -> Rect { plx_ui::widgets::CHIP_FRAME }
     fn menu_rect(index: usize) -> Rect {
-        Rect::new(SCR_W - MARGIN_X - 320.0, 88.0 + index as f32 * (FIELD_H + GAP), 300.0, FIELD_H)
+        // Keep the profile actions in a horizontal strip above the browser grid/share list.
+        // The old vertical popup overlapped the first rows after a server was connected.
+        let width = 280.0;
+        let gap = 16.0;
+        let total = 4.0 * width + 3.0 * gap;
+        let x = (SCR_W - total) * 0.5;
+        Rect::new(x + index as f32 * (width + gap), 92.0, width, FIELD_H)
     }
     fn draw_profile_controls(&self, p: plx_ui::Painter, measure: &dyn Measure, focus: Option<u32>) {
         let server_label = self.host.text().trim().to_owned();
@@ -332,7 +336,6 @@ impl SmbConnectScreen {
                 (MENU_SAVED, "Saved IPs"),
                 (MENU_ADD, "Add IP"),
                 (MENU_DISCONNECT, "Disconnect"),
-                (MENU_LOCK, "App Lock / PIN"),
                 (MENU_CLOSE, "Close"),
             ].iter().enumerate() {
                 let title = CString::new(*title).unwrap();
@@ -411,10 +414,6 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
       self.menu_open = false; self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.selected=0; self.connecting=false; self.save_pending=false; self.saved_id=None;
       self.saved_view = !self.saved.connections().is_empty(); self.error=None; fx.invalidate(plx_machine::present::Provenance::Input);
      }
-     MENU_LOCK => {
-      self.menu_open = false; self.error=Some("App lock and PIN protection are planned for a later security update.".into());
-      fx.invalidate(plx_machine::present::Provenance::Input);
-     }
      e if e>=REMOVE_BASE && e<REMOVE_BASE+plx_smb::store::MAX_SAVED as u32 && self.saved_view => {
       let index=(e-REMOVE_BASE) as usize;
       if let Some(saved)=self.saved.connections().get(index) { let id=saved.id.clone(); self.saved.remove(&id); if let Err(error)=self.saved.save(){self.error=Some(error);} }
@@ -490,9 +489,9 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  fn group_of(&self,elem:&u32,_cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{if !self.menu_open && self.controller.phase()==Phase::Browsing && !self.rows.is_empty() && *elem==PROFILE {Some(PROFILE_GROUP)} else {self.ids().contains(elem).then_some(FORM_GROUP)}}
  fn neighbour(&self,key:FocusKey<u32>,dir:Dir,_cx:&Cx<'_,H>)->Step<u32>{
   if self.menu_open {
-   let menu=[MENU_SAVED,MENU_ADD,MENU_DISCONNECT,MENU_LOCK,MENU_CLOSE];
+   let menu=[MENU_SAVED,MENU_ADD,MENU_DISCONNECT,MENU_CLOSE];
    if let Some(i)=menu.iter().position(|e|*e==key.elem) {
-    let next=match dir {Dir::Up=>i.checked_sub(1),Dir::Down=>(i+1<menu.len()).then_some(i+1),_=>None};
+    let next=match dir {Dir::Left=>i.checked_sub(1),Dir::Right=>(i+1<menu.len()).then_some(i+1),_=>None};
     return next.map_or(Step::Edge,|j|Step::Move(FocusKey{entry:self.entry,elem:menu[j]}));
    }
    return Step::Edge;
@@ -548,8 +547,8 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  }
  fn place(&self,elem:&u32,cx:&Cx<'_,H>,at:At)->Option<Placed>{
   if *elem==PROFILE { let r=Self::profile_rect(); return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(0)}); }
-  if *elem==MENU_SAVED || *elem==MENU_ADD || *elem==MENU_DISCONNECT || *elem==MENU_LOCK || *elem==MENU_CLOSE {
-   let i=match *elem {MENU_SAVED=>0,MENU_ADD=>1,MENU_DISCONNECT=>2,MENU_LOCK=>3,_=>4}; let r=Self::menu_rect(i);
+  if *elem==MENU_SAVED || *elem==MENU_ADD || *elem==MENU_DISCONNECT || *elem==MENU_CLOSE {
+   let i=match *elem {MENU_SAVED=>0,MENU_ADD=>1,MENU_DISCONNECT=>2,_=>3}; let r=Self::menu_rect(i);
    return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(i as u32)});
   }
   if *elem>=REMOVE_BASE && *elem<REMOVE_BASE+plx_smb::store::MAX_SAVED as u32 {
