@@ -74,7 +74,7 @@ pub struct SmbConnectScreen {
     saved_row: AvatarRow,
 }
 
-struct SmbCardSource<'a> { rows: &'a [plx_smb::browser::BrowserEntry], selected: usize }
+struct SmbCardSource<'a> { rows: &'a [plx_smb::browser::BrowserEntry] }
 impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
  fn len(&self)->usize { self.rows.len() }
  fn elem(&self,i:usize)->u32 { SHARE_BASE+i as u32 }
@@ -386,7 +386,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
  type Ev=ScreenEvent<H>;
  fn step(&mut self,ev:&Self::Ev,_cx:&Cx<'_,H>,fx:&mut Effects<'_,H>)->Handled {
   if self.controller.phase()==Phase::Browsing {
-   let src=SmbCardSource{rows:&self.rows,selected:self.selected};
+   let src=SmbCardSource{rows:&self.rows};
    if let Some(CardEvent::Activate(elem))=self.browser_grid.on(ev,_cx,&src,fx) {
     if elem>=SHARE_BASE { self.activate_browser_index((elem-SHARE_BASE) as usize); }
     return Handled::Yes;
@@ -491,7 +491,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   if self.controller.phase()==Phase::Browsing {
    if key.elem==PROFILE { return if dir==Dir::Down && !self.rows.is_empty(){Step::Move(FocusKey{entry:self.entry,elem:SHARE_BASE})}else{Step::Edge}; }
    if key.elem>=SHARE_BASE && dir==Dir::Up && (key.elem-SHARE_BASE)<6 { return Step::Move(FocusKey{entry:self.entry,elem:PROFILE}); }
-   let src=SmbCardSource{rows:&self.rows,selected:self.selected}; return self.browser_grid.neighbour::<H,_>(&src,key,dir);
+   let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.neighbour::<H,_>(&src,key,dir);
   }
   if !self.shares.is_empty() {
    if key.elem==PROFILE {
@@ -540,7 +540,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  fn place(&self,elem:&u32,cx:&Cx<'_,H>,at:At)->Option<Placed>{
   if self.saved_view { if *elem==NEW_CONNECTION {let r=Rect::new((SCR_W as f32-420.0)*0.5,SAVED_FOOTER_Y,420.0,60.0);return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(0)});} return Focusable::<H>::place(&self.saved_shelf(),elem,cx,at); }
   if *elem==PROFILE { let r=Self::profile_rect(); return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(0)}); }
-  if self.controller.phase()==Phase::Browsing && *elem>=SHARE_BASE { let src=SmbCardSource{rows:&self.rows,selected:self.selected}; return self.browser_grid.place(cx,&src,elem,at); }
+  if self.controller.phase()==Phase::Browsing && *elem>=SHARE_BASE { let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.place(cx,&src,elem,at); }
   let r=if *elem>=SHARE_BASE && *elem<SHARE_BASE+self.shares.len() as u32 {let i=(*elem-SHARE_BASE) as usize;let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+i as f32*(FIELD_H+GAP),base.w,FIELD_H))}
   else if *elem==NEW_CONNECTION {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
   else if *elem==CHANGE_SERVER {let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+self.shares.len() as f32*(FIELD_H+GAP),base.w,FIELD_H))}
@@ -551,7 +551,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  fn seat(&self,g:plx_machine::machine::GroupId,from:Placed,cx:&Cx<'_,H>)->FocusKey<u32>{
   if self.saved_view { if g==SAVED_FOOTER_GROUP {return FocusKey{entry:self.entry,elem:NEW_CONNECTION};} return Focusable::<H>::seat(&self.saved_shelf(),g,from,cx); }
   if g==PROFILE_GROUP { return FocusKey{entry:self.entry,elem:PROFILE}; }
-  if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows,selected:self.selected}; if let Some(key)=self.browser_grid.seat::<H,SmbCardSource<'_>>(&src,from){return key;} }
+  if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows}; if let Some(key)=self.browser_grid.seat::<H,SmbCardSource<'_>>(&src,from){return key;} }
   FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}
  }
 }
@@ -609,7 +609,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
   if self.controller.phase()==Phase::Browsing {
    let browser_copy=self.error.as_deref().map(str::to_owned).unwrap_or_else(||self.controller.location());
    layout.draw_narrative(p.translate(0.0, -self.browser_grid.scroll()),None,"SMB Browser",&browser_copy,measure);
-   let src=SmbCardSource{rows:&self.rows,selected:self.selected};
+   let src=SmbCardSource{rows:&self.rows};
    self.browser_grid.draw(f,p.clipped(Rect::new(MARGIN_X,300.0,SCR_W-2.0*MARGIN_X,plx_ui::consts::SCR_H-300.0)),&src);
    self.draw_profile_controls(p,measure,focus);
    return;
