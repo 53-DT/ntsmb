@@ -1693,6 +1693,8 @@ pub enum LoopReq {
     /// software, and LG requires the privacy notice to be readable in the app rather than only on
     /// the store listing.
     OpenSettings(SettingsPage),
+    /// Settings → Switch profile: return to the SMB saved-connection picker.
+    SwitchSmbConnection,
     /// Lab builds only, and it changes no route: the tester stays where they were and the toast
     /// says what happened.
     AccountSendDiagnostics,

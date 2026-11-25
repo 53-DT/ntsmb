@@ -1084,6 +1084,8 @@ enum RootId {
     Favourites,
     UnderPosters,
     Playback,
+    PlayerHud,
+    SwitchProfile,
     AudioSubtitles,
     Language,
     AutoSignIn,
@@ -1108,6 +1110,8 @@ impl FormId for RootId {
         RowKey(match self {
             RootId::Playback => 1,
             RootId::AudioSubtitles => 2,
+            RootId::SwitchProfile => 13,
+            RootId::PlayerHud => 14,
             RootId::Favourites => 3,
             RootId::Language => 4,
             RootId::AutoSignIn => 5,
@@ -1128,6 +1132,8 @@ impl FormId for RootId {
             RootId::UnderPosters => "under_posters",
             RootId::Playback => "playback",
             RootId::AudioSubtitles => "audio_subtitles",
+            RootId::SwitchProfile => "switch_profile",
+            RootId::PlayerHud => "player_hud",
             RootId::Language => "language",
             RootId::AutoSignIn => "auto_sign_in",
             RootId::TrailerAutoplay => "trailer_autoplay",
@@ -1299,6 +1305,8 @@ fn sentence_for(id: Option<&RootId>) -> Cow<'static, str> {
         Some(RootId::Favourites) => Cow::Owned(format!("{} {}", msg::settings_libraries_detail(), msg::settings_libraries_more())),
         Some(RootId::UnderPosters) => Cow::Borrowed(msg::under_posters_detail()),
         Some(RootId::Playback) => Cow::Borrowed(msg::settings_playback_detail()),
+        Some(RootId::PlayerHud) => Cow::Borrowed("Customize the on-screen player and its controls."),
+        Some(RootId::SwitchProfile) => Cow::Borrowed("Choose a different saved SMB connection."),
         Some(RootId::AudioSubtitles) => Cow::Borrowed(msg::settings_audio_detail()),
         Some(RootId::Language) => Cow::Borrowed(msg::settings_language_detail()),
         Some(RootId::AutoSignIn) => Cow::Borrowed(msg::settings_auto_sign_in_detail()),
@@ -1347,12 +1355,25 @@ fn root_form(inputs: &RootInputs) -> Form<RootId, Action, SettingsPage> {
             Action::Door,
             Row::new(plx_os::i18n::msg::settings_playback_title()).chevron(true),
         )
+        .item(
+            RootId::PlayerHud,
+            RowKind::Nav(SettingsPage::PlayerHud),
+            Action::Door,
+            Row::new("Player settings").chevron(true),
+        )
         .item_if(
             signed_in,
             RootId::AudioSubtitles,
             RowKind::Nav(SettingsPage::AudioSubtitles),
             Action::Door,
             Row::new(plx_os::i18n::msg::settings_audio_title()).chevron(true),
+        );
+    let connections = FormSection::new("Connections")
+        .item(
+            RootId::SwitchProfile,
+            RowKind::Button,
+            Action::SwitchProfile,
+            Row::new("Switch profile").chevron(true),
         );
     let system = FormSection::new(plx_os::i18n::msg::settings_system_section())
         .item(
@@ -1439,6 +1460,7 @@ fn root_form(inputs: &RootInputs) -> Form<RootId, Action, SettingsPage> {
         );
     Form::new()
         .section(libraries)
+        .section(connections)
         .section(playback)
         .section(system)
         .section(plaintext)
@@ -1596,6 +1618,9 @@ impl RootPage {
         };
         match action {
             Action::Door => {}
+            Action::SwitchProfile => {
+                fx.push(Fx::App(AppFx::Loop(super::registry::LoopReq::SwitchSmbConnection)));
+            }
             Action::AutoSignIn => {
                 let on = !self.state.auto_sign_in;
                 let (reply, receipt) = std::sync::mpsc::channel();

@@ -342,7 +342,11 @@ impl SmbConnectScreen {
                 }
                 fx.invalidate(plx_machine::present::Provenance::Input);
             }
-            PROFILE => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=true; self.exit_armed=false; self.remove_armed=false; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
+            PROFILE => {
+                fx.push(Fx::App(crate::registry::AppFx::Loop(
+                    crate::registry::LoopReq::OpenSettings(crate::family::SettingsPage::Root),
+                )));
+            }
             HOST|PORT|USER|PASSWORD => self.set_editing(if self.editing==Some(elem){None}else{Some(elem)},fx),
             GUEST => { self.form.guest=!self.form.guest; if self.form.guest { self.set_editing(None,fx); } fx.invalidate(plx_machine::present::Provenance::Input); }
             SAVE => { self.form.save_connection=!self.form.save_connection; fx.invalidate(plx_machine::present::Provenance::Input); }
@@ -411,7 +415,7 @@ impl SmbConnectScreen {
         Some(Rect::new(x + index * (width + gap), SAVED_FOOTER_Y, width, 60.0))
     }
     fn draw_profile_controls(&self, p: plx_ui::Painter, measure: &dyn Measure, focus: Option<u32>) {
-        let label = CString::new("Saved profiles").unwrap();
+        let label = CString::new("Settings").unwrap();
         let r = Rect::new(SCR_W as f32 - 300.0, 92.0, 250.0, FIELD_H);
         Button::new(label.as_ptr(), theme::size::BODY, r).focused(focus == Some(PROFILE)).draw(&Env::inert(), p);
         let _ = measure;
