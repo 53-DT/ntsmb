@@ -248,7 +248,7 @@ impl SmbConnectScreen {
         }
         if field == CHANGE_SERVER {
             let base=Self::rect(HOST,measure)?;
-            return Some(Rect::new(base.x,base.y+self.shares.len() as f32*(FIELD_H+GAP),base.w,FIELD_H));
+            return Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+self.shares.len() as f32*(FIELD_H+GAP),base.w,FIELD_H));
         }
         if field >= SHARE_BASE && field < SHARE_BASE+self.shares.len() as u32 && self.controller.phase()!=Phase::Browsing {
             let i=(field-SHARE_BASE) as usize;
@@ -558,9 +558,9 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   }
   if self.controller.phase()==Phase::Browsing && *elem>=SHARE_BASE { let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.place(cx,&src,elem,at); }
   let r=if *elem>=SAVED_BASE && *elem<REMOVE_BASE {let i=(*elem-SAVED_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),520.0,FIELD_H))}
-  else if *elem>=SHARE_BASE && *elem<SHARE_BASE+self.shares.len() as u32 {let i=(*elem-SHARE_BASE) as usize;let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+i as f32*(FIELD_H+GAP),base.w,FIELD_H))}
+  else if *elem>=SHARE_BASE && *elem<SHARE_BASE+self.shares.len() as u32 {let i=(*elem-SHARE_BASE) as usize;let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+i as f32*(FIELD_H+GAP),base.w,FIELD_H))}
   else if *elem==NEW_CONNECTION {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
-  else if *elem==CHANGE_SERVER {let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+self.shares.len() as f32*(FIELD_H+GAP),base.w,FIELD_H))}
+  else if *elem==CHANGE_SERVER {let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+self.shares.len() as f32*(FIELD_H+GAP),base.w,FIELD_H))}
   else{self.stop_rect(*elem,cx.measure)}?;
   Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(self.ids().iter().position(|e|e==elem).unwrap_or(0) as u32)})
  }
@@ -626,7 +626,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
     TextField::new(plx_os::i18n::msg::browse_jf_server_c(),&share.name).hot(if focus==Some(id){1.0}else{0.0}).draw(p,r,measure);
    }
    let share_base=Self::rect(HOST,measure).unwrap_or(layout.content);
-   let change_y=share_base.y+self.shares.len() as f32*(FIELD_H+GAP);
+   let change_y=share_base.y+SHARE_TOP_PAD+self.shares.len() as f32*(FIELD_H+GAP);
    let change_r=Rect::new(share_base.x,change_y,share_base.w,FIELD_H);
    Button::new(CString::new("Change server / IP").unwrap().as_ptr(),theme::size::BODY,change_r).focused(focus==Some(CHANGE_SERVER)).draw(&Env::inert(),p);
    self.draw_profile_controls(p,measure,focus);

@@ -297,6 +297,19 @@ mod tests {
     }
 
     #[test]
+    fn opted_in_password_fallback_survives_reopening_the_store() {
+        let dir = scratch("password-fallback");
+        let file = dir.join("smb-connections.json");
+        let mut store = SavedStore::open(vec![file.clone()]);
+        let profile = ConnectionProfile::new("nas.local", 445, "viewer", false).unwrap();
+        let id = store.upsert_with_password(profile, Some("test-password".into())).unwrap();
+        store.save().unwrap();
+        let reopened = SavedStore::open(vec![file]);
+        assert_eq!(reopened.get(&id).and_then(|c| c.password.as_deref()), Some("test-password"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn saving_the_same_server_twice_replaces_it_and_keeps_the_folder() {
         let dir = scratch("replace");
         let mut store = SavedStore::open(vec![dir.join("a.json")]);
