@@ -61,6 +61,8 @@ pub struct SmbConnectScreen {
 impl SmbConnectScreen {
     pub fn new(entry: EntryId) -> Self {
         let form = ConnectForm::new();
+        let saved = plx_smb::store::SavedStore::open(vec![plx_base::paths::persistent_state_root().join("ntsmb-connections.json")]);
+        let saved_view = !saved.connections().is_empty();
         Self {
             entry, host: TextBuffer::new(String::new(), 0),
             port: TextBuffer::new(form.port.clone(), form.port.len()),
@@ -68,9 +70,8 @@ impl SmbConnectScreen {
             password: TextBuffer::new(String::new(), 0),
             form, controller: BrowseController::new(),
             shares: Vec::new(), rows: Vec::new(), selected: 0, error: None, connecting: false, editing: None, playback: None,
-            saved: plx_smb::store::SavedStore::open(vec![plx_base::paths::persistent_state_root().join("ntsmb-connections.json")]),
-            save_pending: false, saved_id: None, last_saved_path: String::new(),
-            saved_view: false, resume_path: None,
+            saved, save_pending: false, saved_id: None, last_saved_path: String::new(),
+            saved_view, resume_path: None,
         }
     }
     fn buffer(&self, field: u32) -> &TextBuffer {
