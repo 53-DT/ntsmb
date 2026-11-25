@@ -319,7 +319,7 @@ impl SmbConnectScreen {
             }
         }
     }
-    fn activate_element<H: Host>(&mut self, elem: u32, fx: &mut Effects<'_, H>) {
+    fn activate_element<H: crate::registry::AppLike<Memory = crate::registry::PageMemory>>(&mut self, elem: u32, fx: &mut Effects<'_, H>) {
         self.exit_armed=false;
         match elem {
             REMOVE_CONNECTION => {
