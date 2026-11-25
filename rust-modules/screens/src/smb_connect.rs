@@ -94,18 +94,19 @@ impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
  fn a11y_title(&self,i:usize)->Option<Cow<'_,str>> { self.rows.get(i).map(|r|Cow::Borrowed(r.entry.name.as_str())) }
  fn overlay(&self,p:plx_ui::Painter,i:usize,tile:&Tile,measure:&dyn Measure) {
   let Some(row)=self.rows.get(i) else{return};
+  // Keep the icon and filename in one fixed tile. This avoids the grid's animated
+  // caption band swallowing names on the first row or hiding sibling names on the
+  // focused row, and it makes long names unable to bleed into neighbouring tiles.
   let glyph=CString::new(if row.is_video{"▶"}else{"📁"}).unwrap();
-  let frame=Rect::new(tile.rect.x,tile.rect.y+tile.rect.h*0.22,tile.rect.w,tile.rect.h*0.48);
-  Label::new(glyph.as_ptr(),96,if row.is_video{[0.88,0.91,0.96,1.0]}else{[0.98,0.72,0.25,1.0]}).h(HAlign::Center).draw(p,frame);
-
-  // Every tile gets its own reserved filename band, including the focused row.
-  // The focused name may use the bold face, but it is still measured against
-  // this tile's width and can never spill into the adjacent folder/file icon.
-  let width=(tile.rect.w-24.0).max(1.0);
+  let title_h=34.0;
+  let title_y=tile.rect.y+tile.rect.h-title_h;
+  let frame=Rect::new(tile.rect.x,tile.rect.y+8.0,tile.rect.w,tile.rect.h-title_h-12.0);
+  Label::new(glyph.as_ptr(),68,if row.is_video{[0.88,0.91,0.96,1.0]}else{[0.98,0.72,0.25,1.0]}).h(HAlign::Center).draw(p,frame);
+  p.rrect(Rect::new(tile.rect.x+4.0,title_y,tile.rect.w-8.0,title_h),6.0,0.0,theme::scrim_black(0.70));
+  let width=(tile.rect.w-16.0).max(1.0);
   let (fitted,_)=measure.fit_line_measured(&row.entry.name,width,theme::size::LABEL,tile.focused);
-  let band=Rect::new(tile.rect.x+12.0,tile.rect.y+tile.rect.h+12.0,width,40.0);
   Label::new(fitted.as_ptr(),theme::size::LABEL,if tile.focused{theme::TEXT_PRIMARY}else{theme::TEXT_SECONDARY})
-   .h(HAlign::Center).draw(p,band);
+   .h(HAlign::Center).draw(p,Rect::new(tile.rect.x+8.0,title_y,tile.rect.w-16.0,title_h));
  }
 }
 impl SmbConnectScreen {
