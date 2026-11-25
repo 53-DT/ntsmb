@@ -417,10 +417,26 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
     // Card and Control elements commit through the press machine, not Activate.
     // The profile avatars and Add Connection footer are both such elements.
     ScreenEvent::PressCommit(_) => {
-     if let Some(key)=_cx.focus.current { self.activate_element(key.elem,fx); }
+     if let Some(key)=_cx.focus.current {
+      // The footer has immediate input paths below. Do not replay its deferred commit after
+      // one of those paths has already left the picker.
+      if key.elem!=NEW_CONNECTION || self.saved_view { self.activate_element(key.elem,fx); }
+     }
      Handled::Yes
     }
     ScreenEvent::Input(input)=>match &input.kind {
+    // Pointer clicks carry their hit target directly; pointer focus need not move before commit.
+    InputKind::Click{hit:Some(elem),..} if self.saved_view && *elem==NEW_CONNECTION=>{
+     self.activate_element(*elem,fx);
+     Handled::Yes
+    }
+    // Enter the footer on Magic Remote OK-down instead of depending on a deferred PressCommit
+    // whose focus snapshot may still refer to the previous roster element.
+    InputKind::Key{key:Key::Ok,edge:Edge::Down,..}
+     if self.saved_view && _cx.focus.current.is_some_and(|key|key.entry==self.entry && key.elem==NEW_CONNECTION)=>{
+     self.activate_element(NEW_CONNECTION,fx);
+     Handled::Yes
+    }
     InputKind::SystemKeyboard(up)=>{if !*up {self.editing=None;} Handled::Yes}
     InputKind::Text(edit)=>{if let Some(field)=self.editing {self.buffer_mut(field).edit(edit);self.sync_form();fx.invalidate(plx_machine::present::Provenance::Input);} Handled::Yes}
     InputKind::Key{key,sym,edge,..} if *edge!=Edge::Up=>{
