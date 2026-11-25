@@ -206,9 +206,10 @@ impl SmbConnectScreen {
             self.save_pending = false;
             let mut password_not_saved = false;
             let result = self.form.validate().and_then(|request| {
+                // Read the form's password before moving its ConnectionProfile.
+                let secret = request.password().to_owned();
                 let mut profile = request.profile;
-                let secret = request.password();
-                if !profile.guest && !secret.is_empty() && profile.protect_password(secret).is_err() {
+                if !profile.guest && !secret.is_empty() && profile.protect_password(&secret).is_err() {
                     // Never fall back to writing a plaintext password into the app data file.
                     password_not_saved = true;
                 }
