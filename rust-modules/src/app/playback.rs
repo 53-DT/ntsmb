@@ -62,12 +62,36 @@ pub(crate) fn start_smb_playback(
     started
 }
 
-fn smb_language_name(tag: &str) -> String {
-    let tag = tag.trim();
-    if tag.is_empty() || tag.eq_ignore_ascii_case("und") || tag.eq_ignore_ascii_case("zxx") {
+fn smb_language_code(language: &str, language_tag: &str) -> String {
+    let legacy = language.trim();
+    if !legacy.is_empty() && !legacy.eq_ignore_ascii_case("und") && !legacy.eq_ignore_ascii_case("zxx") {
+        return legacy.to_owned();
+    }
+    let ietf = language_tag.trim();
+    let primary = ietf.split(['-', '_']).next().unwrap_or("").trim();
+    if primary.is_empty() || primary.eq_ignore_ascii_case("und") || primary.eq_ignore_ascii_case("zxx") {
+        String::new()
+    } else {
+        primary.to_owned()
+    }
+}
+
+fn smb_language_name(language: &str, language_tag: &str) -> String {
+    // Matroska's LanguageIETF often carries the only useful language value. FFmpeg
+    // exposes that separately from the legacy ISO-639-2 "language" tag, so prefer
+    // the IETF tag when the legacy value is absent or merely "und".
+    let legacy = language.trim();
+    let ietf = language_tag.trim();
+    let tag = if !ietf.is_empty() && !ietf.eq_ignore_ascii_case("und") && !ietf.eq_ignore_ascii_case("zxx") {
+        ietf
+    } else {
+        legacy
+    };
+    let primary = tag.split(['-', '_']).next().unwrap_or("").trim();
+    if primary.is_empty() || primary.eq_ignore_ascii_case("und") || primary.eq_ignore_ascii_case("zxx") {
         return "Unknown".into();
     }
-    let code = plx_data::metadata::two_letter_code(tag).unwrap_or_else(|| tag.to_owned());
+    let code = plx_data::metadata::two_letter_code(primary).unwrap_or_else(|| primary.to_owned());
     plx_plex::plex::languages::label(&code).to_string()
 }
 
@@ -75,8 +99,8 @@ fn smb_playing_item(probe: &plx_play_feed::SourceProbe, file_name: &str) -> (plx
     let subs = probe.subtitles.iter().map(|subtitle| plx_data::metadata::Stream {
         id: i64::from(subtitle.stream_index).saturating_add(1).max(1),
         index: i64::from(subtitle.stream_index),
-        lang: smb_language_name(&subtitle.language),
-        lang_code: subtitle.language.clone(),
+        lang: smb_language_name(&subtitle.language, &subtitle.language_tag),
+        lang_code: smb_language_code(&subtitle.language, &subtitle.language_tag),
         language_tag: subtitle.language_tag.clone(),
         codec: subtitle.codec.clone(),
         title: subtitle.title.clone(),
@@ -86,8 +110,8 @@ fn smb_playing_item(probe: &plx_play_feed::SourceProbe, file_name: &str) -> (plx
     let audio = probe.audio_tracks.iter().map(|track| plx_data::metadata::Stream {
         id: i64::from(track.stream_index).saturating_add(1).max(1),
         index: i64::from(track.stream_index),
-        lang: smb_language_name(&track.language),
-        lang_code: track.language.clone(),
+        lang: smb_language_name(&track.language, &track.language_tag),
+        lang_code: smb_language_code(&track.language, &track.language_tag),
         language_tag: track.language_tag.clone(),
         codec: track.codec.clone(),
         channels: track.channels,
