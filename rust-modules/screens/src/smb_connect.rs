@@ -2,10 +2,10 @@
 //!
 //! Credentials remain in this live screen/form and are sent only to the SMB worker.
 //! The logical digest records lengths only; password text is never serialized.
-use std::{borrow::Cow, ffi::{CStr, CString}};
+use std::{borrow::Cow, ffi::CString};
 use plx_machine::machine::{
     Canon, Cx, Delivery, Edge, Effects, EntryId, FocusKey, Handled, InputKind, Key,
-    LogicalState, Machine, NavOp, Fx, TextEdit,
+    LogicalState, Machine, NavOp, Fx, TextEdit, Host,
 };
 use plx_ui::frame::Budget;
 use plx_ui::screen::{
@@ -17,7 +17,7 @@ use plx_ui::route_screen::RouteLayout;
 use plx_ui::text_buffer::TextBuffer;
 use plx_ui::text_field::{TextField, FIELD_H};
 use plx_ui::widgets::Button;
-use plx_ui::{theme, Env, Painter, Rect};
+use plx_ui::{theme, Env, Rect, View};
 use plx_smb::{connect_form::ConnectForm, worker::{Event, SmbWorker}};
 
 const HOST: u32 = 10;
@@ -68,7 +68,7 @@ impl SmbConnectScreen {
     fn text_entry(&self) -> TextEntry {
         match self.editing { Some(PASSWORD) => TextEntry::Secret, Some(_) => TextEntry::Plain, None => TextEntry::None }
     }
-    fn set_editing<H>(&mut self, field: Option<u32>, fx: &mut Effects<'_, H>) {
+    fn set_editing<H: Host>(&mut self, field: Option<u32>, fx: &mut Effects<'_, H>) {
         let field = field.filter(|f| Self::field(*f));
         if self.editing == field { return; }
         if let Some(f) = field {
@@ -207,13 +207,12 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
  fn scrim(&self)->Scrim{Scrim::NONE}
  fn draw(&mut self,f:&mut DrawFrame<'_, '_,H>){
   let p=f.painter; let layout=RouteLayout::screen(); let measure=f.measure;
-  let title=CString::new("Connect to SMB").expect("static title");
+  let title="Connect to SMB";
   let body=if self.connecting{"Connecting to the SMB server and loading shares…".to_owned()}
    else if let Some(error)=self.error.as_deref(){format!("Connection failed: {error}")}
    else if !self.shares.is_empty(){format!("Choose a share on {}.",self.form.host)}
    else{"Enter your server details to browse and play videos.".to_owned()};
-  let body=CString::new(body.replace('\0',"")).expect("SMB status contains no nul");
-  layout.draw_narrative(p,None,title.as_c_str(),body.as_c_str(),measure);
+  layout.draw_narrative(p,None,title,&body,measure);
   let focus=f.focus.current.map(|k|k.elem);
   if !self.shares.is_empty(){
    for (i,share) in self.shares.iter().enumerate(){
