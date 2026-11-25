@@ -63,19 +63,14 @@ impl SmbConnectScreen {
         let form = ConnectForm::new();
         // Mirror the app's durable per-install storage ordering: outside the app directory first
         // (reinstall-safe), then the app directory, and /tmp only as a last-resort fallback.
-        let id = plx_base::paths::app_id();
-        let mut saved_paths = Vec::new();
-        if plx_base::paths::ENV_STEERABLE {
-            saved_paths.push(plx_base::paths::in_runtime_dir("ntsmb-connections.json"));
-        }
-        saved_paths.extend([
-            std::path::PathBuf::from(format!("/media/developer/{id}-ntsmb-connections.json")),
-            std::path::PathBuf::from(format!("/media/internal/.{id}-ntsmb-connections.json")),
-            plx_base::paths::in_app_dir("ntsmb-connections.json"),
-        ]);
-        if !plx_base::paths::ENV_STEERABLE {
-            saved_paths.push(plx_base::paths::in_runtime_dir("ntsmb-connections.json"));
-        }
+        // Derive the saved-server locations from the already device-tested session
+        // candidate list. This keeps Developer Mode vs Homebrew Channel jail ordering,
+        // per-install identity, and the final runtime fallback exactly in sync with auth storage.
+        // Only the filename changes; the writable roots and ordering do not.
+        let saved_paths = plx_base::paths::session_candidates()
+            .into_iter()
+            .map(|path| path.with_file_name("ntsmb-connections.json"))
+            .collect();
         let saved = plx_smb::store::SavedStore::open(saved_paths);
         let saved_view = !saved.connections().is_empty();
         Self {
@@ -291,7 +286,9 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  fn group_of(&self,elem:&u32,_cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{self.ids().contains(elem).then_some(FORM_GROUP)}
  fn neighbour(&self,key:FocusKey<u32>,dir:Dir,_cx:&Cx<'_,H>)->Step<u32>{
   let ids=self.ids();let Some(i)=ids.iter().position(|e|*e==key.elem) else{return Step::Edge};
-  let next=match dir{Dir::Up|Dir::Left=>i.checked_sub(1),Dir::Down|Dir::Right=>Some(i+1).filter(|n|*n<ids.len())};
+  // The connect form and browser rows are vertically stacked. Do not let Right
+  // masquerade as Down; on TV remotes that makes the vertical list feel broken.
+  let next=match dir{Dir::Up=>i.checked_sub(1),Dir::Down=>Some(i+1).filter(|n|*n<ids.len()),Dir::Left|Dir::Right=>None};
   next.map_or(Step::Edge,|n|Step::Move(FocusKey{entry:self.entry,elem:ids[n]}))
  }
  fn place(&self,elem:&u32,cx:&Cx<'_,H>,_at:At)->Option<Placed>{
@@ -311,13 +308,15 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
  fn scrim(&self)->Scrim{Scrim::NONE}
  fn draw(&mut self,f:&mut DrawFrame<'_, '_,H>){
   let p=f.painter; let layout=RouteLayout::screen(); let measure=f.measure;
-  let title="Connect to SMB";
-  let body=if self.connecting{"Connecting to the SMB server and loading shares…".to_owned()}
-   else if let Some(error)=self.error.as_deref(){format!("Connection failed: {error}")}
-   else if !self.shares.is_empty(){format!("Choose a share on {}.",self.form.host)}
-   else{"Enter your server details to browse and play videos.".to_owned()};
-  layout.draw_narrative(p,None,title,&body,measure);
   let focus=f.focus.current.map(|k|k.elem);
+  // Each screen state owns ONE header. Drawing the generic connect narrative first and
+  // the browser/share narrative second caused both to occupy the same top-left area.
+  if self.controller.phase()!=Phase::Browsing && !self.saved_view && self.shares.is_empty() {
+   let body=if self.connecting{"Connecting to the SMB server and loading shares…".to_owned()}
+    else if let Some(error)=self.error.as_deref(){format!("Connection failed: {error}")}
+    else{"Enter your server details to browse and play videos.".to_owned()};
+   layout.draw_narrative(p,None,"Connect to SMB",&body,measure);
+  }
   if self.saved_view && !self.saved.connections().is_empty() {
    layout.draw_narrative(p,None,"Saved SMB servers","Choose a saved server or create a new connection.",measure);
    for (i,saved) in self.saved.connections().iter().enumerate(){
