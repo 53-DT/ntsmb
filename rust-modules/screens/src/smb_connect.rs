@@ -92,7 +92,7 @@ impl SmbConnectScreen {
         // candidate list. This keeps Developer Mode vs Homebrew Channel jail ordering,
         // per-install identity, and the final runtime fallback exactly in sync with auth storage.
         // Only the filename changes; the writable roots and ordering do not.
-        let saved_paths = plx_base::paths::session_candidates()
+        let saved_paths: Vec<std::path::PathBuf> = plx_base::paths::session_candidates()
             .into_iter()
             .map(|path| {
                 let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("auth.json");
@@ -347,10 +347,10 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   for candidate in ids.into_iter().filter(|id|*id!=key.elem) {
    let Some(to)=Self::stop_rect(candidate,_cx.measure) else{continue};
    let (primary,orthogonal)=match dir {
-    Dir::Up=>(from.y-to.bottom(),(from.cx()-to.cx()).abs()),
-    Dir::Down=>(to.y-from.bottom(),(from.cx()-to.cx()).abs()),
-    Dir::Left=>(from.x-to.right(),(from.cy()-to.cy()).abs()),
-    Dir::Right=>(to.x-from.right(),(from.cy()-to.cy()).abs()),
+    Dir::Up=>(from.y-(to.y+to.h),(from.cx()-to.cx()).abs()),
+    Dir::Down=>(to.y-(from.y+from.h),(from.cx()-to.cx()).abs()),
+    Dir::Left=>(from.x-(to.x+to.w),(from.cy()-to.cy()).abs()),
+    Dir::Right=>(to.x-(from.x+from.w),(from.cy()-to.cy()).abs()),
    };
    // Directional, situation-aware D-pad movement: only candidates genuinely
    // in the pressed half-plane qualify; nearest axis distance wins, with a
