@@ -469,6 +469,26 @@ where
             }
         }
     }
+
+    // The classic package places the title in its compact transport state. Its modal
+    // Info/Chapters states intentionally hide that top band, but SMB playback still needs
+    // its filename visible above the transport area while a section is open. Reuse the
+    // exact compact title cell and the same title renderer rather than inventing new geometry.
+    let state_has_title = state.ops.iter().any(|op| {
+        matches!(op, DrawOp::Text { bind, .. } if bind == "title.main")
+    });
+    if !state_has_title
+        && f.meta.playing().is_some_and(|item| item.rk == "smb-local")
+    {
+        if let Some(compact) = compact {
+            if let Some(DrawOp::Text { rect, size, bold, ink, alpha, max_lines, leading, .. }) =
+                compact.ops.iter().find(|op| matches!(op, DrawOp::Text { bind, .. } if bind == "title.main"))
+            {
+                let line = TitleLine::of(f, *rect, *size, bold, ink, *alpha, *max_lines, *leading);
+                draw_title(f, row, p, None, Some(line));
+            }
+        }
+    }
     receipt
 }
 
