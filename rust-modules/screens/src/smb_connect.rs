@@ -100,6 +100,17 @@ impl SmbConnectScreen {
                 path.with_file_name(format!("{prefix}ntsmb-connections.json"))
             })
             .collect();
+        // Some older Developer Mode firmware exposes /media/developer/temp as the
+        // persistent writable location even when the partition root is not writable.
+        // Keep it ahead of the volatile runtime fallback, and let SavedStore's 0600
+        // atomic writer protect the credential envelope there.
+        let mut saved_paths = saved_paths;
+        let temp_path = std::path::PathBuf::from(format!(
+            "/media/developer/temp/{}-ntsmb-connections.json",
+            plx_base::paths::app_id()
+        ));
+        let insert_at = saved_paths.len().saturating_sub(1);
+        saved_paths.insert(insert_at, temp_path);
         let saved = plx_smb::store::SavedStore::open(saved_paths);
         let saved_view = !saved.connections().is_empty();
         Self {
@@ -274,7 +285,13 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
      CONNECT => { self.set_editing(None,fx); if let Err(e)=self.connect(){self.error=Some(e);} }
      e if e>=SHARE_BASE && !self.shares.is_empty() && self.controller.phase()!=Phase::Browsing => { let i=(e-SHARE_BASE) as usize; if let Some(share)=self.shares.get(i){ self.controller.select_share(&share.name); self.connecting=true; self.error=None; } }
      e if e>=SHARE_BASE && self.controller.phase()==Phase::Browsing => {
-      let i=(e-SHARE_BASE) as usize; self.selected=i;
+      let i=(e-SHARE_BASE) as usize;
+      // The focus engine owns the visible cursor, while BrowseController owns the
+      // item that activate() opens. Keep both in sync at the activation boundary:
+      // a newly focused tile may not have emitted FocusMoved yet on every input path.
+      let current=self.controller.browser().selected();
+      self.controller.move_selection(i as isize-current as isize);
+      self.selected=i;
       match self.controller.activate(){
        Activation::None=>{},
        Activation::Play(play)=>{
@@ -324,9 +341,25 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  fn group_of(&self,elem:&u32,_cx:&Cx<'_,H>)->Option<plx_machine::machine::GroupId>{self.ids().contains(elem).then_some(FORM_GROUP)}
  fn neighbour(&self,key:FocusKey<u32>,dir:Dir,_cx:&Cx<'_,H>)->Step<u32>{
   if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.neighbour::<H,_>(&src,key,dir); }
-  let ids=self.ids();let Some(i)=ids.iter().position(|e|*e==key.elem) else{return Step::Edge};
-  let next=match dir{Dir::Up=>i.checked_sub(1),Dir::Down=>Some(i+1).filter(|n|*n<ids.len()),Dir::Left|Dir::Right=>None};
-  next.map_or(Step::Edge,|n|Step::Move(FocusKey{entry:self.entry,elem:ids[n]}))
+  let ids=self.ids();
+  let Some(from)=Self::stop_rect(key.elem,_cx.measure) else{return Step::Edge};
+  let mut best:Option<(f32,u32)>=None;
+  for candidate in ids.into_iter().filter(|id|*id!=key.elem) {
+   let Some(to)=Self::stop_rect(candidate,_cx.measure) else{continue};
+   let (primary,orthogonal)=match dir {
+    Dir::Up=>(from.y-to.bottom(),(from.cx()-to.cx()).abs()),
+    Dir::Down=>(to.y-from.bottom(),(from.cx()-to.cx()).abs()),
+    Dir::Left=>(from.x-to.right(),(from.cy()-to.cy()).abs()),
+    Dir::Right=>(to.x-from.right(),(from.cy()-to.cy()).abs()),
+   };
+   // Directional, situation-aware D-pad movement: only candidates genuinely
+   // in the pressed half-plane qualify; nearest axis distance wins, with a
+   // smaller penalty for horizontal/vertical misalignment.
+   if primary < -1.0 {continue;}
+   let score=primary.max(0.0)*3.0+orthogonal;
+   if best.is_none_or(|(old,_)|score<old){best=Some((score,candidate));}
+  }
+  best.map_or(Step::Edge,|(_,elem)|Step::Move(FocusKey{entry:self.entry,elem}))
  }
  fn place(&self,elem:&u32,cx:&Cx<'_,H>,at:At)->Option<Placed>{
   if self.controller.phase()==Phase::Browsing && *elem>=SHARE_BASE { let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.place(cx,&src,elem,at); }
@@ -376,6 +409,13 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
    return;
   }
   if !self.shares.is_empty(){
+   // Keep save/credential-store failures visible on the share picker instead of
+   // silently hiding them behind the early-returning share list.
+   if let Some(error)=self.error.as_deref(){
+    layout.draw_narrative(p,None,"SMB Shares",error,measure);
+   } else {
+    layout.draw_narrative(p,None,"SMB Shares","Select a share to browse its folders.",measure);
+   }
    for (i,share) in self.shares.iter().enumerate(){
     let id=SHARE_BASE+i as u32; let Some(r)=Self::rect(HOST,measure).map(|r|Rect::new(r.x,r.y+i as f32*(FIELD_H+GAP),r.w,FIELD_H)) else{continue};
     TextField::new(plx_os::i18n::msg::browse_jf_server_c(),&share.name).hot(if focus==Some(id){1.0}else{0.0}).draw(p,r,measure);
