@@ -5,7 +5,7 @@
 use std::{borrow::Cow, ffi::CString};
 use plx_machine::machine::{
     Canon, Cx, Delivery, Edge, Effects, EntryId, FocusKey, Handled, InputKind, Key,
-    LogicalState, Machine, NavOp, Fx, TextEdit, Host,
+    LogicalState, Machine, Fx, TextEdit, Host,
 };
 use plx_ui::frame::Budget;
 use plx_ui::cards::{AvatarRow, CardEvent, CardSource, Grid, GridSpec, RowStyle, Tile, TileLabel};
@@ -319,6 +319,7 @@ impl SmbConnectScreen {
         }
     }
     fn activate_element<H: Host>(&mut self, elem: u32, fx: &mut Effects<'_, H>) {
+        self.exit_armed=false;
         match elem {
             REMOVE_CONNECTION => {
                 if !self.remove_armed {
@@ -531,7 +532,12 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
     if self.saved_view && (to.elem as usize)<self.saved.connections().len() {
      self.saved_selection=Some(to.elem as usize);
      self.remove_armed=false;
-    } else if to.elem!=REMOVE_CONNECTION { self.remove_armed=false; }
+    } else if to.elem!=REMOVE_CONNECTION {
+     if self.remove_armed {
+      self.remove_armed=false;
+      if self.error.as_deref()==Some("Press Remove again to confirm deleting the selected connection.") { self.error=None; }
+     }
+    }
     if self.exit_armed { self.exit_armed=false; }
     if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);self.selected=next;}
     Handled::Yes

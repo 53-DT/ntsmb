@@ -115,10 +115,6 @@ impl SavedStore {
         store
     }
 
-    fn parse(text: &str) -> Option<SavedFile> {
-        Self::parse_migrating(text).map(|(file, _)| file)
-    }
-
     fn parse_migrating(text: &str) -> Option<(SavedFile, bool)> {
         let mut file: SavedFile = serde_json::from_str(text).ok()?;
         if file.schema != STORE_SCHEMA {
