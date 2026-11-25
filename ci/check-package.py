@@ -1664,8 +1664,6 @@ if corner is not None:
     check(max(abs(a - b) for a, b in zip(corner, declared)) <= 2,
           f"iconColor {appinfo['iconColor']} matches the icon's own background rgb{corner}")
 
-check(png_size(PAYLOAD / "splash.png") == (1920, 1080),
-      "splash.png is exactly 1920x1080 (splashBackground accepts no other size)")
 # The badged sets are tracked artwork sources (`tools/mkicons.py --out-dir=pkg/dev --badge=DEV`,
 # `--out-dir=pkg/nightly --badge=NIGHTLY`), so they are graded whether or not this run happens to be
 # packaging them — otherwise a regression in one would only ever be found by whoever next built
@@ -1684,8 +1682,6 @@ for badged in ("pkg/dev", "pkg/nightly"):
         dbg_corner = Image.open(ROOT / badged / "largeIcon.png").convert("RGB").getpixel((1, 1))
         check(max(abs(a - b) for a, b in zip(dbg_corner, declared)) <= 2,
               f"{badged}'s badged tile keeps iconColor {appinfo['iconColor']} at its corner rgb{dbg_corner}")
-check(appinfo.get("splashBackground") == "splash.png",
-      "appinfo declares splashBackground: splash.png")
 
 print("== shipped fonts ==")
 # Landed 2026-08-01: Inter (SIL OFL 1.1). This is now a REAL gate, not an XFAIL — its job is to
@@ -1812,7 +1808,7 @@ for loc in staged_locales:
 
 print("== ipk payload ==")
 expected = {
-    "plxnative", "sentry-crash", "libass-plx.so.0", "appinfo.json", "icon.png", "largeIcon.png", "splash.png",
+    "plxnative", "sentry-crash", "libass-plx.so.0", "appinfo.json", "icon.png", "largeIcon.png",
     # appfont-cjk.ttf is the fallback face. Its absence is not a cosmetic loss: every Korean,
     # Japanese and Chinese title in the library becomes tofu, which is LG checklist #6 and #48.
     "appfont.ttf", "appfont-bold.ttf", "appfont-cjk.ttf", "OFL.txt",

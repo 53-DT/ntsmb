@@ -212,6 +212,14 @@ impl SmbConnectScreen {
         }
     }
     fn stop_rect(field: u32, measure: &dyn plx_machine::machine::Measure) -> Option<Rect> {
+        if field >= SAVED_BASE && field < REMOVE_BASE {
+            let i=(field-SAVED_BASE) as usize; let layout=RouteLayout::screen();
+            return Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),520.0,FIELD_H));
+        }
+        if field >= REMOVE_BASE && field < REMOVE_BASE + plx_smb::store::MAX_SAVED as u32 {
+            let i=(field-REMOVE_BASE) as usize; let layout=RouteLayout::screen();
+            return Some(Rect::new(layout.content.x+540.0,layout.content.y+i as f32*(FIELD_H+GAP),150.0,FIELD_H));
+        }
         if field == PROFILE { return Some(Self::profile_rect()); }
         if field == MENU_SAVED { return Some(Self::menu_rect(0)); }
         if field == MENU_ADD { return Some(Self::menu_rect(1)); }
@@ -415,7 +423,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
        if matches!(key,Key::Up|Key::Down){self.set_editing(None,fx);return Handled::No;}
        return Handled::Yes;
       }
-      if *key==Key::Back { if self.saved_view {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} else if self.controller.phase()==Phase::Browsing { match self.controller.go_back(){Back::Handled=>{self.error=None;self.connecting=true;},Back::Leave=>{self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=false;self.saved_id=None;self.error=None;} } Handled::Yes } else if !self.shares.is_empty() { self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=false;self.saved_id=None;self.error=None;fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes } else if !self.saved.connections().is_empty(){self.saved_view=true;self.error=self.saved.saved_temporarily().then(||"Saved in temporary TV storage; it may be lost after a TV restart".into());self.set_editing(None,fx);fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes} else {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} } else if matches!(key,Key::Up|Key::Down|Key::Left|Key::Right) { Handled::No } else {Handled::No}
+      if *key==Key::Back { if self.menu_open {self.menu_open=false;fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes} else if self.saved_view {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} else if self.controller.phase()==Phase::Browsing { match self.controller.go_back(){Back::Handled=>{self.error=None;self.connecting=true;},Back::Leave=>{self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=false;self.saved_id=None;self.error=None;} } Handled::Yes } else if !self.shares.is_empty() { self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=false;self.saved_id=None;self.error=None;fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes } else if !self.saved.connections().is_empty(){self.saved_view=true;self.error=self.saved.saved_temporarily().then(||"Saved in temporary TV storage; it may be lost after a TV restart".into());self.set_editing(None,fx);fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes} else {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} } else if matches!(key,Key::Up|Key::Down|Key::Left|Key::Right) { Handled::No } else {Handled::No}
     }
     _=>Handled::No
    },
@@ -432,7 +440,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Grid{cols:6,holes:&[]},seat:Seat::Remembered,reachable:AxisMask::BOTH,edge:[EdgeRule::Geometric;4],extent:Rect::new(MARGIN_X,324.0,SCR_W-2.0*MARGIN_X,CARD_H),len:self.rows.len(),elem:ElemKind::Card});
    out.push(GroupSpec{id:PROFILE_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent:Self::profile_rect(),len:1,elem:ElemKind::Bare});
   } else {
-   let extent=ids.iter().filter_map(|e| if *e>=SHARE_BASE {None}else{Self::stop_rect(*e,cx.measure)}).reduce(|a,b|a.union(b)).unwrap_or(Rect::FULL);
+   let extent=ids.iter().filter_map(|e|Self::stop_rect(*e,cx.measure)).reduce(|a,b|a.union(b)).unwrap_or(Rect::FULL);
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent,len:ids.len(),elem:ElemKind::Bare});
   }
  }
@@ -494,7 +502,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
    return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(i as u32)});
   }
   if self.controller.phase()==Phase::Browsing && *elem>=SHARE_BASE { let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.place(cx,&src,elem,at); }
-  let r=if *elem>=SAVED_BASE {let i=(*elem-SAVED_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
+  let r=if *elem>=SAVED_BASE && *elem<REMOVE_BASE {let i=(*elem-SAVED_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),520.0,FIELD_H))}
   else if *elem>=SHARE_BASE {let i=(*elem-SHARE_BASE) as usize; let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
   else if *elem==NEW_CONNECTION {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
   else if *elem==CHANGE_SERVER {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.shares.len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}

@@ -16,7 +16,7 @@ once.
 between flavours — `id` and `title` — except for `nightly`, which also moves `version` (to
 `<next X.Y>.<cut date>`, see `appinfo_for`). The other thirteen (twelve for nightly) — `type`,
 `main`, `transparent`, `requiredMemory`, `nativeLifeCycleInterfaceVersion`, `handlesRelaunch`,
-`splashBackground`, `iconColor`, `vendor`, `appDescription` and the two icon FILENAMES, plus
+`iconColor`, `vendor`, `appDescription` and the two icon FILENAMES, plus
 `version` for every flavour but nightly — are behaviour-critical and must never drift. A second
 checked-in descriptor would drift on them the first time one was edited, and would put the version
 in a fifth file that `ci/bump-version.py`, `ci/check-package.py` and `release.yml`'s tag guard all
