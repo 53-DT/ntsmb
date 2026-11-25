@@ -6,6 +6,8 @@ use crate::{range_http::RangeServer, Session};
 pub struct PreparedPlayback {
     pub play: plx_playback_contract::playurl::PlayUrl,
     pub bridge: RangeServer,
+    /// Final path component used by the existing player title/caption.
+    pub file_name: String,
     /// Probe facts retained for the local playback metadata/track menu.
     pub probe: plx_play_feed::SourceProbe,
 }
@@ -66,7 +68,8 @@ pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlay
             .then_some([probe.width, probe.height]),
     };
 
-    Ok(PreparedPlayback { play, bridge, probe })
+    let file_name = path.rsplit(|ch| ch == '/' || ch == '\\').find(|part| !part.is_empty()).unwrap_or(path).to_owned();
+    Ok(PreparedPlayback { play, bridge, file_name, probe })
 }
 
 

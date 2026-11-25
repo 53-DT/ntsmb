@@ -96,7 +96,7 @@ pub(super) fn still(q: Painter, rect: Rect, radius: f32, sid: u16, key: &str, re
 pub(super) fn text_of(f: &Frame<'_>, bind: &str) -> Option<String> {
     let words = |ptr: *const std::os::raw::c_char| if ptr.is_null() { String::new() } else { unsafe { std::ffi::CStr::from_ptr(ptr) }.to_string_lossy().into_owned() };
     match bind {
-        "title.main" => Some(f.meta.now_playing().filter(|n| n.is_real_episode).map_or_else(|| words(plx_media::route::title_cptr(f.ps)), |n| n.title.clone())),
+        "title.main" => Some(if f.meta.playing().is_some_and(|item| item.rk == "smb-local") { f.meta.now_playing().map(|n| n.title.clone()).unwrap_or_default() } else { f.meta.now_playing().filter(|n| n.is_real_episode).map_or_else(|| words(plx_media::route::title_cptr(f.ps)), |n| n.title.clone()) }),
         "title.kicker" => Some(f.meta.now_playing().filter(|n| n.is_real_episode).map_or_else(|| words(plx_media::route::ctxline_cptr(f.ps)), |n| plx_ui::fmt::episode_kicker(n.season, n.index, &n.ep_title))),
         "info.title" => Some(info_content(f.meta).map(|c| c.title).filter(|title| !title.trim().is_empty()).unwrap_or_else(|| words(plx_media::route::title_cptr(f.ps)))),
         "info.summary" => info_content(f.meta).map(|c| c.summary),

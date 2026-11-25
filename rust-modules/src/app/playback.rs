@@ -44,13 +44,14 @@ pub(crate) fn start_smb_playback(
     bridge: &mut super::bridge::Bridge,
     prepared: plx_smb::playback::PreparedPlayback,
 ) -> bool {
-    let item = smb_playing_item(&prepared.probe);
+    let (item, now_playing) = smb_playing_item(&prepared.probe, &prepared.file_name);
     let subtitle_count = item.subs.len();
     pa.set_external_playback(prepared.play, prepared.bridge);
     plx_media::route::clear_url(ps);
     let started = start_playback(ps, pa, 0, Origin::Here, HUD_HEADLESS_MS, None, pages, bridge);
     if started {
         bridge.metadata_run(plx_data::stores::metadata::MetadataCmd::InstallPlaying(Some(item)));
+        bridge.metadata_run(plx_data::stores::metadata::MetadataCmd::SetNowPlaying(Some(now_playing)));
         plx_base::eventlog::log(&format!(
             "smb: native playback started; embedded subtitle tracks={subtitle_count}"
         ));
@@ -61,7 +62,7 @@ pub(crate) fn start_smb_playback(
     started
 }
 
-fn smb_playing_item(probe: &plx_play_feed::SourceProbe) -> plx_data::metadata::PlayingItem {
+fn smb_playing_item(probe: &plx_play_feed::SourceProbe, file_name: &str) -> (plx_data::metadata::PlayingItem, plx_data::metadata::NowPlaying) {
     let subs = probe.subtitles.iter().map(|subtitle| plx_data::metadata::Stream {
         id: i64::from(subtitle.stream_index).saturating_add(1).max(1),
         index: i64::from(subtitle.stream_index),
@@ -71,7 +72,7 @@ fn smb_playing_item(probe: &plx_play_feed::SourceProbe) -> plx_data::metadata::P
         external: false,
         ..Default::default()
     }).collect();
-    plx_data::metadata::PlayingItem {
+    let item = plx_data::metadata::PlayingItem {
         sid: plx_plex::plex::ServerId::from_raw(0),
         rk: "smb-local".into(),
         show_rk: String::new(),
@@ -88,7 +89,23 @@ fn smb_playing_item(probe: &plx_play_feed::SourceProbe) -> plx_data::metadata::P
         markers: Vec::new(),
         chapters: Vec::new(),
         hdr: false,
-    }
+    };
+    let now_playing = plx_data::metadata::NowPlaying {
+        is_episode: false,
+        is_real_episode: false,
+        is_movie: false,
+        title: file_name.to_owned(),
+        ep_title: String::new(),
+        season: 0,
+        index: 0,
+        summary: String::new(),
+        year: 0,
+        dur_ms: (probe.duration_ns / 1_000_000) as i64,
+        rating: String::new(),
+        thumb: String::new(),
+        detail_rk: String::new(),
+    };
+    (item, now_playing)
 }
 
 /// The foreground restore of a paused film still owes its re-pause: the session's readout holds it

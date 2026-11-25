@@ -74,7 +74,7 @@ pub struct SmbConnectScreen {
     saved_row: AvatarRow,
 }
 
-struct SmbCardSource<'a> { rows: &'a [plx_smb::browser::BrowserEntry] }
+struct SmbCardSource<'a> { rows: &'a [plx_smb::browser::BrowserEntry], selected: usize }
 impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
  fn len(&self)->usize { self.rows.len() }
  fn elem(&self,i:usize)->u32 { SHARE_BASE+i as u32 }
@@ -85,11 +85,19 @@ impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
   TileLabel { title:Some(CString::new(row.entry.name.as_str()).unwrap_or_default()), caption:Some(CString::new(if row.is_video{"Video"}else{"Folder"}).unwrap_or_default()), ..TileLabel::default() }
  }
  fn a11y_title(&self,i:usize)->Option<Cow<'_,str>> { self.rows.get(i).map(|r|Cow::Borrowed(r.entry.name.as_str())) }
- fn overlay(&self,p:plx_ui::Painter,i:usize,tile:&Tile,_measure:&dyn Measure) {
+ fn overlay(&self,p:plx_ui::Painter,i:usize,tile:&Tile,measure:&dyn Measure) {
   let Some(row)=self.rows.get(i) else{return};
   let glyph=CString::new(if row.is_video{"▶"}else{"📁"}).unwrap();
   let frame=Rect::new(tile.rect.x,tile.rect.y+tile.rect.h*0.22,tile.rect.w,tile.rect.h*0.48);
   Label::new(glyph.as_ptr(),96,if row.is_video{[0.88,0.91,0.96,1.0]}else{[0.98,0.72,0.25,1.0]}).h(HAlign::Center).draw(p,frame);
+  if i / 6 != self.selected / 6 {
+   let width=(tile.rect.w-20.0).max(1.0);
+   let (fitted,_)=measure.fit_line_measured(&row.entry.name,width,theme::size::LABEL,false);
+   if let Ok(name)=CString::new(fitted) {
+    let band=Rect::new(tile.rect.x+10.0,tile.rect.y+tile.rect.h+8.0,width,28.0);
+    Label::new(name.as_ptr(),theme::size::LABEL,theme::TEXT_SECONDARY).h(HAlign::Center).draw(p,band);
+   }
+  }
  }
 }
 impl SmbConnectScreen {
@@ -119,7 +127,7 @@ impl SmbConnectScreen {
             shares: Vec::new(), rows: Vec::new(), selected: 0, error: saved.saved_temporarily().then(|| "Saved in temporary TV storage; it may be lost after a TV restart".into()), connecting: false, editing: None, playback: None,
             saved, save_pending: false, saved_id: None, last_saved_path: String::new(),
             saved_view, resume_path: None,
-            browser_grid: Grid::new(entry, GridSpec::resting(324.0).columns(6, RowStyle { gap: (SCR_W - 2.0 * MARGIN_X - 44.0 - 6.0 * CARD_W) / 5.0, ..RowStyle::HOME }, MARGIN_X)),
+            browser_grid: Grid::new(entry, GridSpec::resting(324.0).columns(6, RowStyle { h: CARD_W * 0.75, gap: (SCR_W - 2.0 * MARGIN_X - 44.0 - 6.0 * CARD_W) / 5.0, ..RowStyle::HOME }, MARGIN_X)),
             saved_row: AvatarRow::new(),
         }
     }
@@ -375,7 +383,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
  type Ev=ScreenEvent<H>;
  fn step(&mut self,ev:&Self::Ev,_cx:&Cx<'_,H>,fx:&mut Effects<'_,H>)->Handled {
   if self.controller.phase()==Phase::Browsing {
-   let src=SmbCardSource{rows:&self.rows};
+   let src=SmbCardSource{rows:&self.rows,selected:self.selected};
    if let Some(CardEvent::Activate(elem))=self.browser_grid.on(ev,_cx,&src,fx) {
     if elem>=SHARE_BASE { self.activate_browser_index((elem-SHARE_BASE) as usize); }
     return Handled::Yes;
@@ -467,8 +475,8 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
    return;
   }
   if self.controller.phase()==Phase::Browsing && !self.rows.is_empty() {
-   out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Grid{cols:6,holes:&[]},seat:Seat::Remembered,reachable:AxisMask::BOTH,edge:[EdgeRule::Geometric;4],extent:Rect::new(MARGIN_X,324.0,SCR_W-2.0*MARGIN_X,CARD_H),len:self.rows.len(),elem:ElemKind::Card});
-   out.push(GroupSpec{id:PROFILE_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent:Self::profile_rect(),len:1,elem:ElemKind::Bare});
+   out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Grid{cols:6,holes:&[]},seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Geometric;4],extent:Rect::new(MARGIN_X,324.0,SCR_W-2.0*MARGIN_X,CARD_W*0.75),len:self.rows.len(),elem:ElemKind::Card});
+   out.push(GroupSpec{id:PROFILE_GROUP,kind:GroupKind::Free,seat:Seat::Remembered,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent:Self::profile_rect(),len:1,elem:ElemKind::Bare});
   } else {
    let extent=ids.iter().filter_map(|e|self.stop_rect(*e,cx.measure)).reduce(|a,b|a.union(b)).unwrap_or(Rect::FULL);
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent,len:ids.len(),elem:ElemKind::Bare});
@@ -480,7 +488,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   if self.controller.phase()==Phase::Browsing {
    if key.elem==PROFILE { return if dir==Dir::Down && !self.rows.is_empty(){Step::Move(FocusKey{entry:self.entry,elem:SHARE_BASE})}else{Step::Edge}; }
    if key.elem>=SHARE_BASE && dir==Dir::Up && (key.elem-SHARE_BASE)<6 { return Step::Move(FocusKey{entry:self.entry,elem:PROFILE}); }
-   let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.neighbour::<H,_>(&src,key,dir);
+   let src=SmbCardSource{rows:&self.rows,selected:self.selected}; return self.browser_grid.neighbour::<H,_>(&src,key,dir);
   }
   if !self.shares.is_empty() {
    if key.elem==PROFILE {
@@ -529,7 +537,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  fn place(&self,elem:&u32,cx:&Cx<'_,H>,at:At)->Option<Placed>{
   if self.saved_view { if *elem==NEW_CONNECTION {let r=Rect::new((SCR_W as f32-420.0)*0.5,SAVED_FOOTER_Y,420.0,60.0);return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(0)});} return Focusable::<H>::place(&self.saved_shelf(),elem,cx,at); }
   if *elem==PROFILE { let r=Self::profile_rect(); return Some(Placed{rect:r,rest_rect:r,clip:Rect::FULL,index:Some(0)}); }
-  if self.controller.phase()==Phase::Browsing && *elem>=SHARE_BASE { let src=SmbCardSource{rows:&self.rows}; return self.browser_grid.place(cx,&src,elem,at); }
+  if self.controller.phase()==Phase::Browsing && *elem>=SHARE_BASE { let src=SmbCardSource{rows:&self.rows,selected:self.selected}; return self.browser_grid.place(cx,&src,elem,at); }
   let r=if *elem>=SHARE_BASE && *elem<SHARE_BASE+self.shares.len() as u32 {let i=(*elem-SHARE_BASE) as usize;let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+i as f32*(FIELD_H+GAP),base.w,FIELD_H))}
   else if *elem==NEW_CONNECTION {let layout=RouteLayout::screen();Some(Rect::new(layout.content.x,layout.content.y+self.saved.connections().len() as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H))}
   else if *elem==CHANGE_SERVER {let base=Self::rect(HOST,cx.measure)?;Some(Rect::new(base.x,base.y+SHARE_TOP_PAD+self.shares.len() as f32*(FIELD_H+GAP),base.w,FIELD_H))}
@@ -540,7 +548,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  fn seat(&self,g:plx_machine::machine::GroupId,from:Placed,cx:&Cx<'_,H>)->FocusKey<u32>{
   if self.saved_view { if g==SAVED_FOOTER_GROUP {return FocusKey{entry:self.entry,elem:NEW_CONNECTION};} return Focusable::<H>::seat(&self.saved_shelf(),g,from,cx); }
   if g==PROFILE_GROUP { return FocusKey{entry:self.entry,elem:PROFILE}; }
-  if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows}; if let Some(key)=self.browser_grid.seat::<H,SmbCardSource<'_>>(&src,from){return key;} }
+  if self.controller.phase()==Phase::Browsing { let src=SmbCardSource{rows:&self.rows,selected:self.selected}; if let Some(key)=self.browser_grid.seat::<H,SmbCardSource<'_>>(&src,from){return key;} }
   FocusKey{entry:self.entry,elem:self.ids().first().copied().unwrap_or(HOST)}
  }
 }
@@ -598,7 +606,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
   if self.controller.phase()==Phase::Browsing {
    let browser_copy=self.error.as_deref().map(str::to_owned).unwrap_or_else(||self.controller.location());
    layout.draw_narrative(p.translate(0.0, -self.browser_grid.scroll()),None,"SMB Browser",&browser_copy,measure);
-   let src=SmbCardSource{rows:&self.rows};
+   let src=SmbCardSource{rows:&self.rows,selected:self.selected};
    self.browser_grid.draw(f,p.clipped(Rect::new(MARGIN_X,300.0,SCR_W-2.0*MARGIN_X,plx_ui::consts::SCR_H-300.0)),&src);
    self.draw_profile_controls(p,measure,focus);
    return;
