@@ -16,6 +16,7 @@ pub mod browser;
 pub mod profile;
 pub mod connect_form;
 pub mod worker;
+pub mod controller;
 
 use smb2::{FileReader, SmbClient, Tree};
 
