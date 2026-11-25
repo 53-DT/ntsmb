@@ -8,7 +8,7 @@ use plx_machine::machine::{
     LogicalState, Machine, NavOp, Fx, TextEdit, Host,
 };
 use plx_ui::frame::Budget;
-use plx_ui::cards::{CardSource, Grid, GridSpec, RowStyle, Tile, TileLabel};
+use plx_ui::cards::{CardEvent, CardSource, Grid, GridSpec, RowStyle, Tile, TileLabel};
 use plx_ui::widgets::Art;
 use plx_machine::machine::Measure;
 use plx_ui::label::{Label, HAlign};
@@ -86,31 +86,19 @@ impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
 impl SmbConnectScreen {
     pub fn new(entry: EntryId) -> Self {
         let form = ConnectForm::new();
-        // Mirror the app's durable per-install storage ordering: outside the app directory first
-        // (reinstall-safe), then the app directory, and /tmp only as a last-resort fallback.
-        // Derive the saved-server locations from the already device-tested session
-        // candidate list. This keeps Developer Mode vs Homebrew Channel jail ordering,
-        // per-install identity, and the final runtime fallback exactly in sync with auth storage.
-        // Only the filename changes; the writable roots and ordering do not.
-        let saved_paths: Vec<std::path::PathBuf> = plx_base::paths::session_candidates()
+        // Use the same per-install durable locations as the HUD store, whose webOS
+        // candidate order is device-tested. Do not offer the runtime (/tmp) candidate:
+        // Saved SMB credentials must never appear to save successfully and then vanish
+        // when the TV restarts.
+        let saved_paths: Vec<std::path::PathBuf> = plx_base::paths::hud_candidates()
             .into_iter()
+            .filter(|path| path.parent() != Some(plx_base::paths::runtime_dir()))
             .map(|path| {
-                let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("auth.json");
-                let prefix = file_name.strip_suffix("auth.json").unwrap_or("");
+                let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("huds");
+                let prefix = file_name.strip_suffix("huds").unwrap_or("");
                 path.with_file_name(format!("{prefix}ntsmb-connections.json"))
             })
             .collect();
-        // Some older Developer Mode firmware exposes /media/developer/temp as the
-        // persistent writable location even when the partition root is not writable.
-        // Keep it ahead of the volatile runtime fallback, and let SavedStore's 0600
-        // atomic writer protect the credential envelope there.
-        let mut saved_paths = saved_paths;
-        let temp_path = std::path::PathBuf::from(format!(
-            "/media/developer/temp/{}-ntsmb-connections.json",
-            plx_base::paths::app_id()
-        ));
-        let insert_at = saved_paths.len().saturating_sub(1);
-        saved_paths.insert(insert_at, temp_path);
         let saved = plx_smb::store::SavedStore::open(saved_paths);
         let saved_view = !saved.connections().is_empty();
         Self {
@@ -219,6 +207,25 @@ impl SmbConnectScreen {
         let r = Self::rect(field, measure)?;
         Some(if Self::field(field) { plx_ui::text_field::plate(r) } else { r })
     }
+    fn activate_browser_index(&mut self, index: usize) {
+        if index >= self.rows.len() { return; }
+        let current = self.controller.browser().selected();
+        self.controller.move_selection(index as isize - current as isize);
+        self.selected = index;
+        match self.controller.activate() {
+            Activation::None => {}
+            Activation::Play(play) => {
+                if self.playback.is_some() {
+                    self.error = Some("A video is already being prepared".into());
+                } else {
+                    match plx_smb::controller::spawn_prepare(play) {
+                        Ok(rx) => { self.playback = Some(rx); self.connecting = true; self.error = None; }
+                        Err(error) => { self.error = Some(error); self.connecting = false; }
+                    }
+                }
+            }
+        }
+    }
     fn ids(&self) -> Vec<u32> {
         if self.controller.phase()==Phase::Browsing { (0..self.rows.len()).map(|i| SHARE_BASE+i as u32).collect() }
         else if !self.shares.is_empty() { (0..self.shares.len()).map(|i| SHARE_BASE + i as u32).collect() }
@@ -241,7 +248,10 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
  fn step(&mut self,ev:&Self::Ev,_cx:&Cx<'_,H>,fx:&mut Effects<'_,H>)->Handled {
   if self.controller.phase()==Phase::Browsing {
    let src=SmbCardSource{rows:&self.rows};
-   let _=self.browser_grid.on(ev,_cx,&src,fx);
+   if let Some(CardEvent::Activate(elem))=self.browser_grid.on(ev,_cx,&src,fx) {
+    if elem>=SHARE_BASE { self.activate_browser_index((elem-SHARE_BASE) as usize); }
+    return Handled::Yes;
+   }
   }
   match ev {
    ScreenEvent::Tick(_)=>{
@@ -285,23 +295,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
      CONNECT => { self.set_editing(None,fx); if let Err(e)=self.connect(){self.error=Some(e);} }
      e if e>=SHARE_BASE && !self.shares.is_empty() && self.controller.phase()!=Phase::Browsing => { let i=(e-SHARE_BASE) as usize; if let Some(share)=self.shares.get(i){ self.controller.select_share(&share.name); self.connecting=true; self.error=None; } }
      e if e>=SHARE_BASE && self.controller.phase()==Phase::Browsing => {
-      let i=(e-SHARE_BASE) as usize;
-      // The focus engine owns the visible cursor, while BrowseController owns the
-      // item that activate() opens. Keep both in sync at the activation boundary:
-      // a newly focused tile may not have emitted FocusMoved yet on every input path.
-      let current=self.controller.browser().selected();
-      self.controller.move_selection(i as isize-current as isize);
-      self.selected=i;
-      match self.controller.activate(){
-       Activation::None=>{},
-       Activation::Play(play)=>{
-        if self.playback.is_some(){self.error=Some("A video is already being prepared".into());}
-        else {match plx_smb::controller::spawn_prepare(play){
-         Ok(rx)=>{self.playback=Some(rx);self.connecting=true;self.error=None;}
-         Err(error)=>{self.error=Some(error);self.connecting=false;}
-        }}
-       }
-      }
+      self.activate_browser_index((e-SHARE_BASE) as usize);
      }
      _=>{}
     }
