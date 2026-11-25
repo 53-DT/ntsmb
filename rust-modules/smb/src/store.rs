@@ -20,7 +20,7 @@ use crate::profile::ConnectionProfile;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 pub const STORE_SCHEMA: u32 = 1;
@@ -268,6 +268,178 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     result
 }
 
+
+const PIN_SCHEMA: u32 = 1;
+const PIN_ITERATIONS: u32 = 250_000;
+const PIN_SALT_LEN: usize = 16;
+const PIN_HASH_LEN: usize = 32;
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct PinRecord {
+    salt: String,
+    hash: String,
+    iterations: u32,
+}
+
+impl PinRecord {
+    fn valid(&self) -> bool {
+        hex_decode(&self.salt).is_some_and(|salt| salt.len() == PIN_SALT_LEN)
+            && hex_decode(&self.hash).is_some_and(|hash| hash.len() == PIN_HASH_LEN)
+            && (10_000..=1_000_000).contains(&self.iterations)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PinFile {
+    schema: u32,
+    #[serde(default)]
+    pin: Option<PinRecord>,
+}
+
+impl PinFile {
+    fn empty() -> Self { Self { schema: PIN_SCHEMA, pin: None } }
+}
+
+/// A separate app-lock file. Keeping it separate from the connection list preserves compatibility
+/// with older NT-SMB builds. Only a salted PBKDF2 verifier is written; the PIN itself is never stored.
+pub struct PinStore {
+    candidates: Vec<PathBuf>,
+    data: PinFile,
+    temporary: AtomicBool,
+    runtime_dir: Option<PathBuf>,
+}
+
+impl PinStore {
+    pub fn open(candidates: Vec<PathBuf>) -> Self {
+        Self::open_with_runtime(candidates, None)
+    }
+
+    pub fn open_with_runtime(mut candidates: Vec<PathBuf>, runtime_dir: Option<PathBuf>) -> Self {
+        candidates.dedup();
+        let mut data = PinFile::empty();
+        let mut temporary = false;
+        for path in &candidates {
+            match fs::read_to_string(path) {
+                Ok(text) => match serde_json::from_str::<PinFile>(&text) {
+                    Ok(parsed) if parsed.schema == PIN_SCHEMA && parsed.pin.as_ref().is_none_or(PinRecord::valid) => {
+                        data = parsed;
+                        temporary = runtime_dir.as_deref().is_some_and(|runtime| path.parent() == Some(runtime));
+                        break;
+                    }
+                    _ => {
+                        let mut aside = path.clone().into_os_string();
+                        aside.push(".corrupt");
+                        let _ = fs::rename(path, PathBuf::from(aside));
+                    }
+                },
+                Err(_) => continue,
+            }
+        }
+        Self { candidates, data, temporary: AtomicBool::new(temporary), runtime_dir }
+    }
+
+    pub fn has_pin(&self) -> bool { self.data.pin.is_some() }
+
+    pub fn saved_temporarily(&self) -> bool { self.temporary.load(Ordering::Relaxed) }
+
+    /// Set and persist a four-digit app PIN. The old verifier is restored if the write fails.
+    pub fn set_pin(&mut self, pin: &str) -> Result<(), String> {
+        if pin.len() != 4 || !pin.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err("The app PIN must contain exactly four digits.".into());
+        }
+        let mut salt = [0u8; PIN_SALT_LEN];
+        fs::File::open("/dev/urandom")
+            .and_then(|mut file| file.read_exact(&mut salt))
+            .map_err(|_| "The TV could not generate a secure PIN salt.".to_owned())?;
+        let mut hash = [0u8; PIN_HASH_LEN];
+        pbkdf2::pbkdf2_hmac::<sha2::Sha256>(pin.as_bytes(), &salt, PIN_ITERATIONS, &mut hash);
+
+        let previous = self.data.pin.clone();
+        self.data.pin = Some(PinRecord {
+            salt: hex_encode(&salt),
+            hash: hex_encode(&hash),
+            iterations: PIN_ITERATIONS,
+        });
+        if let Err(error) = self.save() {
+            self.data.pin = previous;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Verify a PIN with a constant-time comparison of the derived verifier.
+    pub fn verify_pin(&self, pin: &str) -> bool {
+        if pin.len() != 4 || !pin.bytes().all(|byte| byte.is_ascii_digit()) {
+            return false;
+        }
+        let Some(record) = self.data.pin.as_ref() else { return false; };
+        if !record.valid() { return false; }
+        let Some(salt) = hex_decode(&record.salt) else { return false; };
+        let Some(expected) = hex_decode(&record.hash) else { return false; };
+        let mut actual = [0u8; PIN_HASH_LEN];
+        pbkdf2::pbkdf2_hmac::<sha2::Sha256>(pin.as_bytes(), &salt, record.iterations, &mut actual);
+        let difference = expected.iter().zip(actual.iter()).fold(0u8, |acc, (a, b)| acc | (a ^ b));
+        difference == 0
+    }
+
+    /// Remove the app PIN, restoring it in memory if the updated file cannot be written.
+    pub fn remove_pin(&mut self) -> Result<(), String> {
+        let previous = self.data.pin.clone();
+        self.data.pin = None;
+        if let Err(error) = self.save() {
+            self.data.pin = previous;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub fn save(&self) -> Result<(), String> {
+        let bytes = serde_json::to_vec_pretty(&self.data).map_err(|error| format!("Could not encode app PIN: {error}"))?;
+        let mut last_error = None;
+        for path in &self.candidates {
+            match write_atomic(path, &bytes) {
+                Ok(()) => {
+                    let temporary = self.runtime_dir.as_deref().is_some_and(|runtime| path.parent() == Some(runtime));
+                    self.temporary.store(temporary, Ordering::Relaxed);
+                    return Ok(());
+                }
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| "No writable app PIN storage path is available.".into()))
+    }
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn hex_decode(value: &str) -> Option<Vec<u8>> {
+    fn nibble(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
+    }
+    let bytes = value.as_bytes();
+    if bytes.len() % 2 != 0 { return None; }
+    let mut decoded = Vec::with_capacity(bytes.len() / 2);
+    for pair in bytes.chunks_exact(2) {
+        decoded.push((nibble(pair[0])? << 4) | nibble(pair[1])?);
+    }
+    Some(decoded)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,6 +548,25 @@ mod tests {
         assert!(store.connections().is_empty());
         assert!(!file.exists());
         assert!(dir.join("c.json.corrupt").exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+
+    #[test]
+    fn app_pin_is_hashed_verified_and_removable() {
+        let dir = scratch("app-pin");
+        let file = dir.join("ntsmb-app-pin.json");
+        let mut store = PinStore::open(vec![file.clone()]);
+        assert!(!store.has_pin());
+        store.set_pin("4826").unwrap();
+        assert!(store.has_pin());
+        assert!(store.verify_pin("4826"));
+        assert!(!store.verify_pin("4827"));
+        assert!(!fs::read_to_string(&file).unwrap().contains("4826"));
+        let mut reopened = PinStore::open(vec![file.clone()]);
+        assert!(reopened.verify_pin("4826"));
+        reopened.remove_pin().unwrap();
+        assert!(!reopened.has_pin());
         let _ = fs::remove_dir_all(dir);
     }
 

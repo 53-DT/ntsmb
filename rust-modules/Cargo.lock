@@ -1573,8 +1573,10 @@ dependencies = [
 name = "plx_smb"
 version = "0.0.0"
 dependencies = [
+ "pbkdf2",
  "plx_play_feed",
  "plx_playback_contract",
+ "sha2",
  "smb2",
  "smol",
 ]
