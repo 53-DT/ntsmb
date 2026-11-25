@@ -5,7 +5,7 @@ name: SMB development build
 
 on:
   push:
-    branches: [smb-development, 0.0.1b-smb-browser]
+    branches: [smb-development, 0.0.1b-smb-browser, smb-connect-wip]
     paths:
       - ".gitignore"
       - ".github/workflows/smb-build.yml"
