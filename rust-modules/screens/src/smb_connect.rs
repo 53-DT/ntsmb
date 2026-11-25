@@ -293,6 +293,40 @@ impl SmbConnectScreen {
             }
         }
     }
+    fn activate_element<H: Host>(&mut self, elem: u32, fx: &mut Effects<'_, H>) {
+        match elem {
+            PROFILE => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=true; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
+            HOST|PORT|USER|PASSWORD => self.set_editing(if self.editing==Some(elem){None}else{Some(elem)},fx),
+            GUEST => { self.form.guest=!self.form.guest; if self.form.guest { self.set_editing(None,fx); } fx.invalidate(plx_machine::present::Provenance::Input); }
+            SAVE => { self.form.save_connection=!self.form.save_connection; fx.invalidate(plx_machine::present::Provenance::Input); }
+            NEW_CONNECTION => { self.saved_view=false; self.saved_id=None; self.error=None; self.host=TextBuffer::new(String::new(),0); self.port=TextBuffer::new("445".into(),3); self.user=TextBuffer::new(String::new(),0); self.password=TextBuffer::new(String::new(),0); self.form=ConnectForm::new(); self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
+            CHANGE_SERVER => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.selected=0; self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=true; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
+            e if self.saved_view && (e as usize)<self.saved.connections().len() => {
+                let index=(e-SAVED_BASE) as usize;
+                if let Some(saved)=self.saved.connections().get(index).cloned(){
+                    self.host=TextBuffer::new(saved.profile.host.clone(),saved.profile.host.len());
+                    self.port=TextBuffer::new(saved.profile.port.to_string(),saved.profile.port.to_string().len());
+                    self.user=TextBuffer::new(saved.profile.username.clone(),saved.profile.username.len());
+                    let password=saved.profile.reveal_password().or_else(||saved.password.clone()).unwrap_or_default();
+                    self.password=TextBuffer::new(password.clone(),password.len());
+                    self.form.host=saved.profile.host.clone(); self.form.port=saved.profile.port.to_string();
+                    self.form.username=saved.profile.username.clone(); self.form.password=password;
+                    self.form.guest=saved.profile.guest; self.form.share=saved.profile.share.clone();
+                    self.form.save_connection=true; self.saved_id=Some(saved.id.clone());
+                    self.saved.mark_used(&saved.id); let _=self.saved.save();
+                    self.resume_path=Some(saved.last_path.clone());
+                    self.saved_view=false;
+                    if !saved.profile.guest && self.form.password.is_empty(){self.error=Some("Enter the password for this saved server".into());self.set_editing(Some(PASSWORD),fx);}
+                    else if let Err(error)=self.connect(){self.error=Some(error);}
+                    fx.invalidate(plx_machine::present::Provenance::Input);
+                }
+            }
+            CONNECT => { self.set_editing(None,fx); if let Err(e)=self.connect(){self.error=Some(e);} }
+            e if e>=SHARE_BASE && !self.shares.is_empty() && self.controller.phase()!=Phase::Browsing => { let i=(e-SHARE_BASE) as usize; if let Some(share)=self.shares.get(i){ self.controller.select_share(&share.name); self.connecting=true; self.error=None; } }
+            e if e>=SHARE_BASE && self.controller.phase()==Phase::Browsing => self.activate_browser_index((e-SHARE_BASE) as usize),
+            _=>{}
+        }
+    }
     fn ids(&self) -> Vec<u32> {
         if self.controller.phase()==Phase::Browsing {
             let rows: Vec<u32> = (0..self.rows.len()).map(|i| SHARE_BASE+i as u32).collect();
@@ -377,43 +411,16 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
     Handled::Yes
    }
    ScreenEvent::Activate(elem) => {
-    match *elem {
-     PROFILE => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=true; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
-     HOST|PORT|USER|PASSWORD => self.set_editing(if self.editing==Some(*elem){None}else{Some(*elem)},fx),
-     GUEST => { self.form.guest=!self.form.guest; if self.form.guest { self.set_editing(None,fx); } fx.invalidate(plx_machine::present::Provenance::Input); }
-     SAVE => { self.form.save_connection=!self.form.save_connection; fx.invalidate(plx_machine::present::Provenance::Input); }
-     NEW_CONNECTION => { self.saved_view=false; self.saved_id=None; self.error=None; self.host=TextBuffer::new(String::new(),0); self.port=TextBuffer::new("445".into(),3); self.user=TextBuffer::new(String::new(),0); self.password=TextBuffer::new(String::new(),0); self.form=ConnectForm::new(); self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
-     CHANGE_SERVER => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.selected=0; self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=true; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
-     e if self.saved_view && (e as usize)<self.saved.connections().len() => {
-      let index=(e-SAVED_BASE) as usize;
-      if let Some(saved)=self.saved.connections().get(index).cloned(){
-       self.host=TextBuffer::new(saved.profile.host.clone(),saved.profile.host.len());
-       self.port=TextBuffer::new(saved.profile.port.to_string(),saved.profile.port.to_string().len());
-       self.user=TextBuffer::new(saved.profile.username.clone(),saved.profile.username.len());
-       let password=saved.profile.reveal_password().or_else(||saved.password.clone()).unwrap_or_default();
-       self.password=TextBuffer::new(password.clone(),password.len());
-       self.form.host=saved.profile.host.clone(); self.form.port=saved.profile.port.to_string();
-       self.form.username=saved.profile.username.clone(); self.form.password=password;
-       self.form.guest=saved.profile.guest; self.form.share=saved.profile.share.clone();
-       self.form.save_connection=true; self.saved_id=Some(saved.id.clone());
-       self.saved.mark_used(&saved.id); let _=self.saved.save();
-       self.resume_path=Some(saved.last_path.clone());
-       self.saved_view=false;
-       if !saved.profile.guest && self.form.password.is_empty(){self.error=Some("Enter the password for this saved server".into());self.set_editing(Some(PASSWORD),fx);}
-       else {if let Err(error)=self.connect(){self.error=Some(error);}}
-       fx.invalidate(plx_machine::present::Provenance::Input);
-      }
-     }
-     CONNECT => { self.set_editing(None,fx); if let Err(e)=self.connect(){self.error=Some(e);} }
-     e if e>=SHARE_BASE && !self.shares.is_empty() && self.controller.phase()!=Phase::Browsing => { let i=(e-SHARE_BASE) as usize; if let Some(share)=self.shares.get(i){ self.controller.select_share(&share.name); self.connecting=true; self.error=None; } }
-     e if e>=SHARE_BASE && self.controller.phase()==Phase::Browsing => {
-      self.activate_browser_index((e-SHARE_BASE) as usize);
-     }
-     _=>{}
+     self.activate_element(*elem,fx);
+     Handled::Yes
     }
-    Handled::Yes
-   }
-   ScreenEvent::Input(input)=>match &input.kind {
+    // Card and Control elements commit through the press machine, not Activate.
+    // The profile avatars and Add Connection footer are both such elements.
+    ScreenEvent::PressCommit => {
+     if let Some(key)=_cx.focus.current { self.activate_element(key.elem,fx); }
+     Handled::Yes
+    }
+    ScreenEvent::Input(input)=>match &input.kind {
     InputKind::SystemKeyboard(up)=>{if !*up {self.editing=None;} Handled::Yes}
     InputKind::Text(edit)=>{if let Some(field)=self.editing {self.buffer_mut(field).edit(edit);self.sync_form();fx.invalidate(plx_machine::present::Provenance::Input);} Handled::Yes}
     InputKind::Key{key,sym,edge,..} if *edge!=Edge::Up=>{
