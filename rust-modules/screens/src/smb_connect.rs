@@ -122,7 +122,7 @@ impl SmbConnectScreen {
             shares: Vec::new(), rows: Vec::new(), selected: 0, error: None, connecting: false, editing: None, playback: None,
             saved, save_pending: false, saved_id: None, last_saved_path: String::new(),
             saved_view, resume_path: None,
-            browser_grid: Grid::new(entry, GridSpec::resting(244.0).columns(6, RowStyle { gap: (SCR_W - 2.0 * MARGIN_X - 44.0 - 6.0 * CARD_W) / 5.0, ..RowStyle::HOME }, MARGIN_X)),
+            browser_grid: Grid::new(entry, GridSpec::resting(276.0).columns(6, RowStyle { gap: (SCR_W - 2.0 * MARGIN_X - 44.0 - 6.0 * CARD_W) / 5.0, ..RowStyle::HOME }, MARGIN_X)),
         }
     }
     fn buffer(&self, field: u32) -> &TextBuffer {
@@ -332,7 +332,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
  fn groups(&self,cx:&Cx<'_,H>,out:&mut Vec<GroupSpec>){
   let ids=self.ids(); if ids.is_empty(){return;}
   if self.controller.phase()==Phase::Browsing && !self.rows.is_empty() {
-   out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Grid{cols:6,holes:&[]},seat:Seat::Remembered,reachable:AxisMask::BOTH,edge:[EdgeRule::Geometric;4],extent:Rect::new(MARGIN_X,244.0,SCR_W-2.0*MARGIN_X,CARD_H),len:ids.len(),elem:ElemKind::Card});
+   out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Grid{cols:6,holes:&[]},seat:Seat::Remembered,reachable:AxisMask::BOTH,edge:[EdgeRule::Geometric;4],extent:Rect::new(MARGIN_X,276.0,SCR_W-2.0*MARGIN_X,CARD_H),len:ids.len(),elem:ElemKind::Card});
   } else {
    let extent=ids.iter().filter_map(|e| if *e>=SHARE_BASE {None}else{Self::stop_rect(*e,cx.measure)}).reduce(|a,b|a.union(b)).unwrap_or(Rect::FULL);
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent,len:ids.len(),elem:ElemKind::Bare});
@@ -405,7 +405,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
   if self.controller.phase()==Phase::Browsing {
    layout.draw_narrative(p,None,"SMB Browser",&self.controller.location(),measure);
    let src=SmbCardSource{rows:&self.rows};
-   self.browser_grid.draw(f,p.clipped(Rect::new(MARGIN_X,220.0,SCR_W-2.0*MARGIN_X,plx_ui::consts::SCR_H-220.0)),&src);
+   self.browser_grid.draw(f,p.clipped(Rect::new(MARGIN_X,252.0,SCR_W-2.0*MARGIN_X,plx_ui::consts::SCR_H-252.0)),&src);
    return;
   }
   if !self.shares.is_empty(){
