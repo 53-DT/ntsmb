@@ -485,7 +485,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
    return Step::Move(FocusKey{entry:self.entry,elem});
   }
   let ids=self.ids();
-  let Some(from)=Self::stop_rect(key.elem,_cx.measure) else{return Step::Edge};
+  let Some(from)=self.stop_rect(key.elem,_cx.measure) else{return Step::Edge};
   let mut best:Option<(f32,u32)>=None;
   for candidate in ids.into_iter().filter(|id|*id!=key.elem) {
    let Some(to)=Self::stop_rect(candidate,_cx.measure) else{continue};
