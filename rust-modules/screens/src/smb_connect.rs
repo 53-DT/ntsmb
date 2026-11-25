@@ -69,7 +69,11 @@ impl SmbConnectScreen {
         // Only the filename changes; the writable roots and ordering do not.
         let saved_paths = plx_base::paths::session_candidates()
             .into_iter()
-            .map(|path| path.with_file_name("ntsmb-connections.json"))
+            .map(|path| {
+                let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("auth.json");
+                let prefix = file_name.strip_suffix("auth.json").unwrap_or("");
+                path.with_file_name(format!("{prefix}ntsmb-connections.json"))
+            })
             .collect();
         let saved = plx_smb::store::SavedStore::open(saved_paths);
         let saved_view = !saved.connections().is_empty();
