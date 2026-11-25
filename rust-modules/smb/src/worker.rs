@@ -129,15 +129,21 @@ fn worker_loop(commands: Receiver<Command>, events: Sender<Event>) {
     // Keep the validated request so a failed share selection can be retried without forcing
     // the user back through the connection form. The password stays worker-local and Debug-redacted.
     let mut request: Option<ConnectRequest> = None;
+    // Keep the authenticated server alive after share enumeration. Selecting the first share
+    // should use the connection that just authenticated, not silently authenticate a second time.
+    // If selecting a share consumes it and fails, the retained request lets the next attempt reconnect.
+    let mut server: Option<crate::Server> = None;
     let mut share: Option<Session> = None;
 
     while let Ok(command) = commands.recv() {
         match command {
             Command::Connect(incoming) => {
                 share = None;
+                server = None;
                 request = Some(incoming);
                 match request.as_ref().expect("request just stored").connect_and_list_shares() {
-                    Ok((_connected, shares)) => {
+                    Ok((connected, shares)) => {
+                        server = Some(connected);
                         let _ = events.send(Event::Shares(Ok(shares)));
                     }
                     Err(error) => {
@@ -152,12 +158,18 @@ fn worker_loop(commands: Receiver<Command>, events: Sender<Event>) {
                     let _ = events.send(Event::Directory(Err("Connect to an SMB server first".into())));
                     continue;
                 };
-                // Authenticate a fresh share session for each selection. `connect_share` consumes
-                // its Server handle, so reconnecting here keeps the server request available if
-                // the share name is mistyped or the NAS temporarily rejects that tree connection.
-                let connected = match connect_request.connect_server() {
-                    Ok(server) => server,
-                    Err(error) => { let _ = events.send(Event::Directory(Err(error))); continue; }
+                // Use the authenticated server from Connect for the first share selection. The
+                // server handle is consumed by connect_share; if that operation fails, reconnect
+                // from the worker-owned request on the next selection attempt.
+                let connected = match server.take() {
+                    Some(connected) => connected,
+                    None => match connect_request.connect_server() {
+                        Ok(connected) => connected,
+                        Err(error) => {
+                            let _ = events.send(Event::Directory(Err(user_facing_connect_error(error))));
+                            continue;
+                        }
+                    },
                 };
                 match connected.connect_share_blocking(&name) {
                     Ok(mut connected_share) => match connected_share.list_directory_blocking("") {
@@ -184,6 +196,7 @@ fn worker_loop(commands: Receiver<Command>, events: Sender<Event>) {
             }
             Command::Disconnect => {
                 share = None;
+                server = None;
                 request = None;
                 let _ = events.send(Event::Disconnected);
             }
