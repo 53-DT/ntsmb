@@ -416,7 +416,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
     }
     // Card and Control elements commit through the press machine, not Activate.
     // The profile avatars and Add Connection footer are both such elements.
-    ScreenEvent::PressCommit => {
+    ScreenEvent::PressCommit(_) => {
      if let Some(key)=_cx.focus.current { self.activate_element(key.elem,fx); }
      Handled::Yes
     }
