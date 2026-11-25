@@ -1545,6 +1545,24 @@ pub(crate) fn perform_hud_command(
     use plx_appkit::player_hud::command::HudCommand;
     use plx_media::route::QueueStep;
     use plx_screens::player::overlay::OverlayKind;
+    if bridge.metadata_view().playing().is_some_and(|item| item.rk == "smb-local") {
+        let next = match &command {
+            HudCommand::Previous => Some(false),
+            HudCommand::Next => Some(true),
+            _ => None,
+        };
+        if let Some(next) = next {
+            let armed = if next {
+                plx_smb::playback::arm_autoplay_next()
+            } else {
+                plx_smb::playback::arm_autoplay_previous()
+            };
+            if armed {
+                exit_player(player, pa, repause_at, refresh_hubs, pages);
+            }
+            return;
+        }
+    }
     match command {
         HudCommand::TogglePlay | HudCommand::Seek(_) => {
             super::bridge::send_player_message(pages,

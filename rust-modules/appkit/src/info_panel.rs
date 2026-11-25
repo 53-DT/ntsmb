@@ -20,6 +20,9 @@ const N_ACTIONS: usize = 2;
 /// itself otherwise. What the Info card's second action opens, and what the `go_to_detail`
 /// command opens and is enabled by. `None` when nothing playing has one.
 pub fn detail_rk<'a>(meta: metadata::MetadataView<'a>) -> Option<&'a str> {
+    if meta.playing().is_some_and(|item| item.rk == "smb-local") {
+        return None;
+    }
     meta.now_playing()
         .map(|n| n.detail_rk.as_str())
         .filter(|s| !s.is_empty())

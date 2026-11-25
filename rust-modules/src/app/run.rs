@@ -746,7 +746,17 @@ fn hud_model(
         || plx_media::player::seek_pending(ps).is_some();
     let scrub_ns = plx_media::player::TX.scrub_ns.load(Relaxed);
     let advancing = plx_media::player::state(ps) == plx_media::player::PlaybackState::Playing;
+    let smb_local = meta.playing().is_some_and(|item| item.rk == "smb-local");
     let (is_episode, is_movie) = meta.now_playing().map_or((false, false), |n| (n.is_real_episode, n.is_movie));
+    let controls = if smb_local {
+        plx_appkit::player_hud::Controls::for_item(
+            true,
+            plx_smb::playback::has_autoplay_previous(),
+            plx_smb::playback::has_autoplay_next(),
+        )
+    } else {
+        plx_appkit::player_hud::Controls::now(ps)
+    };
     let projected_end_time = if plx_appkit::player_hud::model::end_time_is_eligible(
         plx_appkit::player_hud::model::EndTimeEligibility {
             enabled: live_clock_and_lane && plx_media::route::hud_end_time(),
@@ -787,9 +797,9 @@ fn hud_model(
         sub_position: plx_media::route::subtitle_position(),
         sub_tone: plx_media::player::subtitle_tone(),
         sub_sel: plx_media::player::desired_sub_idx(),
-        controls: plx_appkit::player_hud::Controls::now(ps),
+        controls,
         chapters: plx_appkit::chapters_panel::has_chapters(meta),
-        detail: plx_appkit::info_panel::detail_rk(meta).is_some(),
+        detail: !smb_local && plx_appkit::info_panel::detail_rk(meta).is_some(),
         skip_secs: u32::try_from(plx_media::route::skip_interval().ns() / 1_000_000_000).unwrap_or(10),
         stats: crate::app::diagnostics::enabled(),
         bitmap_key: plx_media::player::active_bitmap_key(playpos_ns),

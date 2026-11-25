@@ -73,47 +73,78 @@ pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlay
 }
 
 
-// SMB directory autoplay is an in-memory queue owned by the SMB feature. After EOS the
-// existing player returns to the browser, which prepares the next sibling off the frame thread.
+// SMB sibling playback is an in-memory queue owned by the SMB feature. The cursor
+// supports both the player's Previous/Next buttons and automatic advance at end-of-file.
+// The existing player returns to the browser for a single frame; that page prepares the
+// selected sibling off the frame thread and opens it through the normal playback path.
 struct AutoplayState {
-    queue: std::collections::VecDeque<(usize, crate::controller::PlayRequest)>,
-    armed: bool,
+    items: Vec<(usize, crate::controller::PlayRequest)>,
+    current: Option<usize>,
+    armed_target: Option<usize>,
 }
 static AUTOPLAY: std::sync::OnceLock<std::sync::Mutex<AutoplayState>> = std::sync::OnceLock::new();
 
 fn autoplay_state() -> &'static std::sync::Mutex<AutoplayState> {
     AUTOPLAY.get_or_init(|| std::sync::Mutex::new(AutoplayState {
-        queue: std::collections::VecDeque::new(),
-        armed: false,
+        items: Vec::new(),
+        current: None,
+        armed_target: None,
     }))
 }
 
-pub fn set_autoplay_queue(queue: Vec<(usize, crate::controller::PlayRequest)>) {
+pub fn set_autoplay_queue(items: Vec<(usize, crate::controller::PlayRequest)>, current_row: usize) {
     let mut state = autoplay_state().lock().unwrap_or_else(|p| p.into_inner());
-    state.queue = queue.into();
-    state.armed = false;
+    state.current = items.iter().position(|(row, _)| *row == current_row);
+    state.items = items;
+    state.armed_target = None;
 }
 
 pub fn clear_autoplay_queue() {
     let mut state = autoplay_state().lock().unwrap_or_else(|p| p.into_inner());
-    state.queue.clear();
-    state.armed = false;
+    state.items.clear();
+    state.current = None;
+    state.armed_target = None;
 }
 
-pub fn arm_autoplay_if_next() -> bool {
+pub fn has_autoplay_previous() -> bool {
+    let state = autoplay_state().lock().unwrap_or_else(|p| p.into_inner());
+    state.current.is_some_and(|current| current > 0)
+}
+
+pub fn has_autoplay_next() -> bool {
+    let state = autoplay_state().lock().unwrap_or_else(|p| p.into_inner());
+    state.current.is_some_and(|current| current + 1 < state.items.len())
+}
+
+pub fn arm_autoplay_previous() -> bool {
     let mut state = autoplay_state().lock().unwrap_or_else(|p| p.into_inner());
-    if state.queue.is_empty() {
-        state.armed = false;
+    let Some(current) = state.current else { return false; };
+    let Some(target) = current.checked_sub(1) else { return false; };
+    state.armed_target = Some(target);
+    true
+}
+
+pub fn arm_autoplay_next() -> bool {
+    let mut state = autoplay_state().lock().unwrap_or_else(|p| p.into_inner());
+    let Some(current) = state.current else { return false; };
+    let target = current + 1;
+    if target >= state.items.len() {
+        state.armed_target = None;
         false
     } else {
-        state.armed = true;
+        state.armed_target = Some(target);
         true
     }
 }
 
+pub fn arm_autoplay_if_next() -> bool {
+    arm_autoplay_next()
+}
+
 pub fn take_autoplay_next() -> Option<(usize, crate::controller::PlayRequest)> {
     let mut state = autoplay_state().lock().unwrap_or_else(|p| p.into_inner());
-    if !state.armed { return None; }
-    state.armed = false;
-    state.queue.pop_front()
+    let target = state.armed_target.take()?;
+    let item = state.items.get(target)?.clone();
+    state.current = Some(target);
+    Some(item)
 }

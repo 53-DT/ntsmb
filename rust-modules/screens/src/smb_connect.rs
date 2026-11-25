@@ -289,16 +289,16 @@ impl SmbConnectScreen {
             let share = self.controller.share().map(str::to_owned);
             let folder = self.controller.folder().to_owned();
             let queue = match (request, share) {
-                (Some(request), Some(share)) => self.rows.iter().enumerate().skip(index + 1)
+                (Some(request), Some(share)) => self.rows.iter().enumerate()
                     .filter(|(_, row)| row.is_video)
-                    .filter_map(|(next_index, row)| {
+                    .filter_map(|(row_index, row)| {
                         plx_smb::browser::child_path(&folder, &row.entry.name).ok().map(|path| {
-                            (next_index, plx_smb::controller::PlayRequest { request: request.clone(), share: share.clone(), path })
+                            (row_index, plx_smb::controller::PlayRequest { request: request.clone(), share: share.clone(), path })
                         })
                     }).collect(),
                 _ => Vec::new(),
             };
-            plx_smb::playback::set_autoplay_queue(queue);
+            plx_smb::playback::set_autoplay_queue(queue, index);
         } else {
             plx_smb::playback::clear_autoplay_queue();
         }
