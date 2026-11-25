@@ -18,7 +18,7 @@
 
 use crate::profile::ConnectionProfile;
 use serde::{Deserialize, Serialize};
-use std::cell::Cell;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -68,7 +68,7 @@ pub fn connection_id(profile: &ConnectionProfile) -> String {
 pub struct SavedStore {
     candidates: Vec<PathBuf>,
     data: SavedFile,
-    temporary: Cell<bool>,
+    temporary: AtomicBool,
 }
 
 impl SavedStore {
@@ -96,7 +96,7 @@ impl SavedStore {
                 Err(_) => continue,
             }
         }
-        Self { candidates, data, temporary: Cell::new(temporary) }
+        Self { candidates, data, temporary: AtomicBool::new(temporary) }
     }
 
     fn parse(text: &str) -> Option<SavedFile> {
@@ -195,7 +195,7 @@ impl SavedStore {
     /// Write to the first candidate that can be written. The error never names a path or a
     /// credential, because it can reach the screen and the log.
     pub fn saved_temporarily(&self) -> bool {
-        self.temporary.get()
+        self.temporary.load(Ordering::Relaxed)
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -203,7 +203,7 @@ impl SavedStore {
         let runtime = plx_base::paths::runtime_dir();
         for path in &self.candidates {
             if write_atomic(path, text.as_bytes()).is_ok() {
-                self.temporary.set(path.parent() == Some(runtime.as_path()));
+                self.temporary.store(path.parent() == Some(runtime.as_path()), Ordering::Relaxed);
                 return Ok(());
             }
         }

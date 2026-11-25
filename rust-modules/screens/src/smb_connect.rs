@@ -342,7 +342,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
        if matches!(key,Key::Up|Key::Down){self.set_editing(None,fx);return Handled::No;}
        return Handled::Yes;
       }
-      if *key==Key::Back { if self.saved_view {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} else if self.controller.phase()==Phase::Browsing { match self.controller.go_back(){Back::Handled=>{self.error=None;self.connecting=true;},Back::Leave=>{self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=false;self.saved_id=None;self.error=None;} } Handled::Yes } else if !self.shares.is_empty() { self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=false;self.saved_id=None;self.error=None;fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes } else if !self.saved.connections().is_empty(){self.saved_view=true;self.error=None;self.set_editing(None,fx);fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes} else {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} } else if matches!(key,Key::Up|Key::Down|Key::Left|Key::Right) { Handled::No } else {Handled::No}
+      if *key==Key::Back { if self.saved_view {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} else if self.controller.phase()==Phase::Browsing { match self.controller.go_back(){Back::Handled=>{self.error=None;self.connecting=true;},Back::Leave=>{self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=false;self.saved_id=None;self.error=None;} } Handled::Yes } else if !self.shares.is_empty() { self.controller.disconnect();self.shares.clear();self.rows.clear();self.connecting=false;self.saved_view=false;self.saved_id=None;self.error=None;fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes } else if !self.saved.connections().is_empty(){self.saved_view=true;self.error=self.saved.saved_temporarily().then(||"Saved in temporary TV storage; it may be lost after a TV restart".into());self.set_editing(None,fx);fx.invalidate(plx_machine::present::Provenance::Input);Handled::Yes} else {fx.push(Fx::Nav(NavOp::Dismiss(self.entry)));Handled::Yes} } else if matches!(key,Key::Up|Key::Down|Key::Left|Key::Right) { Handled::No } else {Handled::No}
     }
     _=>Handled::No
    },
@@ -438,7 +438,8 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
    layout.draw_narrative(p,None,"Connect to SMB",&body,measure);
   }
   if self.saved_view && !self.saved.connections().is_empty() {
-   layout.draw_narrative(p,None,"Saved SMB servers","Choose a saved server or create a new connection.",measure);
+   let saved_copy=self.error.as_deref().unwrap_or("Choose a saved server or create a new connection.");
+   layout.draw_narrative(p,None,"Saved SMB servers",saved_copy,measure);
    for (i,saved) in self.saved.connections().iter().enumerate(){
     let id=SAVED_BASE+i as u32; let r=Rect::new(layout.content.x,layout.content.y+i as f32*(FIELD_H+GAP),layout.content.w.min(FIELD_W),FIELD_H);
     let label=format!("{}  ·  {}",saved.name,if saved.profile.guest{"Guest"}else{&saved.profile.username});
