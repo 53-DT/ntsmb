@@ -21,7 +21,7 @@ use plx_ui::screen::{
 use plx_ui::route_screen::RouteLayout;
 use plx_ui::text_buffer::TextBuffer;
 use plx_ui::text_field::{TextField, FIELD_H};
-use plx_ui::widgets::Button;
+use plx_ui::widgets::{Button, CtlPop};
 use plx_ui::{theme, Env, Rect, View};
 use plx_smb::{connect_form::ConnectForm, controller::{BrowseController, Phase, Activation, Back}};
 
@@ -73,6 +73,9 @@ pub struct SmbConnectScreen {
     menu_open: bool,
     resume_path: Option<String>,
     browser_grid: Grid,
+    // Reuse FinNative's spring-based control lift for the Profile toggle and its menu items.
+    profile_pop: CtlPop<1>,
+    menu_pop: CtlPop<5>,
 }
 
 struct SmbCardSource<'a> { rows: &'a [plx_smb::browser::BrowserEntry] }
@@ -121,6 +124,7 @@ impl SmbConnectScreen {
             saved, save_pending: false, saved_id: None, last_saved_path: String::new(),
             saved_view, menu_open: false, resume_path: None,
             browser_grid: Grid::new(entry, GridSpec::resting(324.0).columns(6, RowStyle { gap: (SCR_W - 2.0 * MARGIN_X - 44.0 - 6.0 * CARD_W) / 5.0, ..RowStyle::HOME }, MARGIN_X)),
+            profile_pop: CtlPop::new(), menu_pop: CtlPop::new(),
         }
     }
     fn buffer(&self, field: u32) -> &TextBuffer {
@@ -320,7 +324,7 @@ impl SmbConnectScreen {
     fn draw_profile_controls(&self, p: plx_ui::Painter, measure: &dyn Measure, focus: Option<u32>) {
         let label = CString::new("⚙  Profile").unwrap();
         Button::new(label.as_ptr(), theme::size::BODY, Self::profile_rect())
-            .focused(focus == Some(PROFILE)).draw(&Env::inert(), p);
+            .focused(focus == Some(PROFILE)).scale(1.0 + self.profile_pop.focus(0) * 0.08).draw(&Env::inert(), p);
         if self.menu_open {
             for (i, (id, title)) in [
                 (MENU_SAVED, "Saved IPs"),
@@ -331,7 +335,7 @@ impl SmbConnectScreen {
             ].iter().enumerate() {
                 let title = CString::new(*title).unwrap();
                 Button::new(title.as_ptr(), theme::size::BODY, Self::menu_rect(i))
-                    .focused(focus == Some(*id)).draw(&Env::inert(), p);
+                    .focused(focus == Some(*id)).scale(1.0 + self.menu_pop.focus(i) * 0.06).draw(&Env::inert(), p);
             }
         }
         let _ = measure;
@@ -369,8 +373,12 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
     }
     Handled::Yes
    }
-   ScreenEvent::Tick(_)=>{
-    if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;}
+   ScreenEvent::Tick(t)=>{
+    let focus=_cx.focus.current.map(|key|key.elem);
+    self.profile_pop.step((focus==Some(PROFILE)).then_some(0),t.dt());
+    let menu_focus=focus.and_then(|elem|[MENU_SAVED,MENU_ADD,MENU_DISCONNECT,MENU_LOCK,MENU_CLOSE].iter().position(|id|*id==elem));
+    self.menu_pop.step(menu_focus,t.dt());
+    if let Err(error)=self.poll(){self.error=Some(error);self.connecting=false;
     if let Some(rx)=self.playback.as_ref(){
      match rx.try_recv(){
       Ok(Ok(prepared))=>{self.playback=None;self.connecting=false;fx.push(Fx::App(crate::registry::AppFx::SmbPlaybackReady(prepared)));}
