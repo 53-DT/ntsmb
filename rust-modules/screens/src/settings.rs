@@ -1154,6 +1154,7 @@ impl FormId for RootId {
 enum Action {
     /// A `Nav` row's slot: opening its page is [`RowKind::Nav`]'s job, so nothing dispatches this.
     Door,
+    SwitchProfile,
     AutoSignIn,
     TrailerAutoplay,
     /// A server's "connect without encryption" switch.
