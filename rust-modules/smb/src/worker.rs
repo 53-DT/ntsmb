@@ -87,6 +87,44 @@ impl Drop for SmbWorker {
     }
 }
 
+/// Friendly wording for common authentication failures, while retaining diagnostic transport errors.
+fn user_facing_connect_error(error: String) -> String {
+    let lower = error.to_ascii_lowercase();
+    let auth_failed = [
+        "logon failure",
+        "login failure",
+        "authentication failed",
+        "auth failure",
+        "nt_status_logon_failure",
+        "status_logon_failure",
+        "access denied",
+    ].iter().any(|needle| lower.contains(needle));
+    if auth_failed {
+        "SMB login failed. Check the username and password, or try Guest access.".into()
+    } else {
+        error
+    }
+}
+
+#[cfg(test)]
+mod connect_error_tests {
+    use super::user_facing_connect_error;
+
+    #[test]
+    fn common_authentication_errors_are_clear_and_retryable() {
+        for error in ["NT_STATUS_LOGON_FAILURE", "Authentication failed", "Access denied", "Login failure"] {
+            let friendly = user_facing_connect_error(error.into());
+            assert!(friendly.contains("Check the username and password"), "{friendly}");
+        }
+    }
+
+    #[test]
+    fn unrelated_connection_errors_remain_diagnostic() {
+        let error = "Connection timed out".to_string();
+        assert_eq!(user_facing_connect_error(error.clone()), error);
+    }
+}
+
 fn worker_loop(commands: Receiver<Command>, events: Sender<Event>) {
     // Keep the validated request so a failed share selection can be retried without forcing
     // the user back through the connection form. The password stays worker-local and Debug-redacted.
@@ -103,7 +141,7 @@ fn worker_loop(commands: Receiver<Command>, events: Sender<Event>) {
                         let _ = events.send(Event::Shares(Ok(shares)));
                     }
                     Err(error) => {
-                        let _ = events.send(Event::Shares(Err(error)));
+                        let _ = events.send(Event::Shares(Err(user_facing_connect_error(error))));
                     }
                 }
             }
