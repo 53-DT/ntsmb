@@ -50,6 +50,7 @@ pub(crate) fn start_smb_playback(
     plx_media::route::clear_url(ps);
     let started = start_playback(ps, pa, 0, Origin::Here, HUD_HEADLESS_MS, None, pages, bridge);
     if started {
+        pa.report_external_playing();
         bridge.metadata_run(plx_data::stores::metadata::MetadataCmd::InstallPlaying(Some(item)));
         bridge.metadata_run(plx_data::stores::metadata::MetadataCmd::SetNowPlaying(Some(now_playing)));
         plx_base::eventlog::log(&format!(
