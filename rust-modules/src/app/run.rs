@@ -2814,7 +2814,7 @@ pub(super) fn execute_loop_command(req: plx_screens::registry::LoopReq,
                 super::bridge::open_settings_at(pages, page);
             }
             plx_screens::registry::LoopReq::SwitchSmbConnection => {
-                super::bridge::nav_root(pages, AppArg::SmbConnect);
+                super::bridge::nav_push(pages, AppArg::SmbConnect);
             }
             // `ps` is threaded rather than read from a global (lane D's lab gate: `player::diag`
             // has taken a `&PlaybackSession` since phase 9, and `lab::request_upload` with it).

@@ -196,6 +196,21 @@ impl PickerPage {
         fx.invalidate(plx_machine::present::Provenance::Input);
     }
     fn commit(&mut self, value: Value, fx: &mut Effects<'_, InnerHost>) {
+        let system = match (self.state.field, value.clone()) {
+            (PickerKind::SubtitleLanguage, Value::Language(v)) => Some(("ntsmb_subtitle_language", serde_json::Value::String(v))),
+            (PickerKind::SubtitleMode, Value::Mode(v)) => Some(("ntsmb_subtitle_mode", serde_json::Value::from(v))),
+            (PickerKind::ForcedSubtitles, Value::Forced(v)) => Some(("ntsmb_subtitle_forced", serde_json::Value::from(v))),
+            _ => None,
+        };
+        if let Some((key, value)) = system {
+            let (reply, rx) = mpsc::channel();
+            self.txn.pending = Some(Pending::Local(rx));
+            self.txn.saving = true;
+            self.state.io.busy = true;
+            self.state.io.status = plx_os::i18n::msg::settings_playback_saving().into();
+            fx.push(Fx::App(AppFx::Preferences(PreferenceCmd::SystemSubtitleDefault { key: key.into(), value, reply })));
+            return;
+        }
         match value {
             Value::IntroSkip(_, _) | Value::CreditsSkip(_, _) | Value::InstantDpadSeeking(_) | Value::UriEngine(_) | Value::DolbyVision(_) | Value::Quality(_) | Value::DirectPlay(_) | Value::AudioConversion(_) | Value::NextEpisode(_) | Value::DeckPress(_) | Value::SkipInterval(_) | Value::UiResolution(_) | Value::SubtitleSize(_) | Value::SubtitlePosition(_) | Value::SubtitleTone(_) | Value::HdrOverlay(_) => self.txn.save_local(&mut self.state.io, value, fx),
             value => {

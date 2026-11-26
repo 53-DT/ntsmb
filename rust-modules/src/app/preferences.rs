@@ -105,6 +105,21 @@ pub(super) fn execute(command: PreferenceCmd) {
                 plx_machine::present::wake_from_worker();
             });
         }
+        PreferenceCmd::SystemSubtitleDefault { key, value, reply } => {
+            let _ = plx_base::storage_worker::submit_retained(move || {
+                let mut already = false;
+                let saved = plx_plex::plex::session::update_guarded_with_outcome(|current| {
+                    already = current.extensions.0.get(&key) == Some(&value);
+                    if already { None } else {
+                        let mut next = current.clone();
+                        next.extensions.0.insert(key, value);
+                        Some(next)
+                    }
+                }, || true).is_some_and(|write| write.outcome.persisted()) || already;
+                let _ = reply.send(saved);
+                plx_machine::present::wake_from_worker();
+            });
+        }
         PreferenceCmd::AutoSignIn { on, reply } => {
             let expected = plx_plex::plex::session::peek();
             let tenure = plx_plex::plex::session::tenure();

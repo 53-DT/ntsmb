@@ -259,24 +259,7 @@ pub fn slot_with_preferences(ps: &plx_media::route::PlaybackSession, meta: plx_d
             .then(|| meta.synthesized_tail_marker(head, has_next))
             .flatten()
     });
-    let slot = slot_for_preferences(m, real.is_some(), has_next, mode, prefs);
-    if slot.is_discs() {
-        // SMB-local playback has its own folder-backed autoplay queue, not a Plex episode
-        // queue. Resolve its dedicated Previous/Next availability here so the HUD's drawn
-        // controls and its input/action routing share the same ControlSlot.
-        let controls = if meta.playing().is_some_and(|item| item.rk == "smb-local") {
-            Controls::for_item(
-                true,
-                plx_smb::playback::has_autoplay_previous(),
-                plx_smb::playback::has_autoplay_next(),
-            )
-        } else {
-            Controls::now(ps)
-        };
-        ControlSlot::Discs(controls)
-    } else {
-        slot
-    }
+    slot_for_preferences(m, real.is_some(), has_next, mode, prefs)
 }
 
 /// New modes apply only to genuine server markers and a fresh matching viewer grant.

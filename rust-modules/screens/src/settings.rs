@@ -1343,8 +1343,7 @@ fn root_form(inputs: &RootInputs) -> Form<RootId, Action, SettingsPage> {
             Action::Door,
             Row::new("Player settings").chevron(true),
         )
-        .item_if(
-            signed_in,
+        .item(
             RootId::AudioSubtitles,
             RowKind::Nav(SettingsPage::AudioSubtitles),
             Action::Door,

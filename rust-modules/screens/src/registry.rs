@@ -242,6 +242,7 @@ pub enum PreferenceCmd {
     /// TV-wide playback controls. These deliberately do not require a Plex profile or SMB connection.
     SystemSkipInterval { interval: plx_media::route::SkipInterval, reply: std::sync::mpsc::Sender<bool> },
     SystemInstantDpadSeeking { seeking: plx_plex::plex::session::InstantDpadSeeking, reply: std::sync::mpsc::Sender<bool> },
+    SystemSubtitleDefault { key: String, value: serde_json::Value, reply: std::sync::mpsc::Sender<bool> },
     Language { language: plx_os::i18n::Preference, reply: std::sync::mpsc::Sender<bool> },
     /// The Interface resolution picked in its picker: install-wide, applied at the next launch. The
     /// app writes it through the session; `reply` learns whether the write was durable.

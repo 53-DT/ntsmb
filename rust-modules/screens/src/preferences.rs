@@ -92,9 +92,8 @@ impl PickerKind {
     }
     /// Whether this field is a Plex ACCOUNT preference (saved to the account, loaded with it); every
     /// other field is this app's own, per profile, and never touches the account.
-    fn is_account(self) -> bool {
-        matches!(self, Self::AudioLanguage | Self::SubtitleMode | Self::SubtitleLanguage | Self::ForcedSubtitles)
-    }
+    fn is_account(self) -> bool { self == Self::AudioLanguage }
+    fn is_system_subtitle(self) -> bool { matches!(self, Self::SubtitleMode | Self::SubtitleLanguage | Self::ForcedSubtitles) }
     /// The crumb over this field's picker: the title of the page it was opened from.
     fn parent_title(self) -> &'static str {
         self.kind().map_or(plx_os::i18n::msg::settings_title(), Kind::title)
@@ -568,7 +567,8 @@ fn shown(field: PickerKind, inputs: &FieldListInputs<'_>) -> bool {
         PickerKind::SubtitleSize | PickerKind::SubtitlePosition | PickerKind::SubtitleColor => inputs.prefs.is_some() || (inputs.show_retry && !inputs.busy),
         PickerKind::IntroSkip => inputs.marker_prefs.intro_granted,
         PickerKind::CreditsSkip => inputs.marker_prefs.credits_granted,
-        PickerKind::AudioLanguage | PickerKind::SubtitleMode | PickerKind::SubtitleLanguage | PickerKind::ForcedSubtitles => inputs.prefs.is_some(),
+        PickerKind::AudioLanguage => inputs.prefs.is_some(),
+        PickerKind::SubtitleMode | PickerKind::SubtitleLanguage | PickerKind::ForcedSubtitles => true,
         _ => true,
     }
 }
@@ -592,6 +592,7 @@ fn row_sentence<'a>(kind: Kind, id: Option<&RowId>, page: &'a str, status: bool,
     use plx_os::i18n::msg;
     let Some(RowId::Field(field)) = id else { return Cow::Borrowed(page) };
     if field.is_account() || status { return Cow::Borrowed(page); }
+    if field.is_system_subtitle() { return Cow::Borrowed(field.copy()); }
     if *whose == Whose::Nobody {
         return Cow::Borrowed(if kind == Kind::Playback { page } else { msg::settings_playback_unseated() });
     }
@@ -626,9 +627,9 @@ fn resolve_value(field: PickerKind, quality: Quality, direct_play: DirectPlayMod
         PickerKind::UiResolution => unreachable!("resolution requires the retained inputs"),
         // A deprecated code (`pb`) resolves to its replacement so the picker checks that entry.
         PickerKind::AudioLanguage => Value::Language(prefs.and_then(|p| p.stated_language.as_deref()).map(plx_plex::plex::languages::canonical).unwrap_or_default().to_string()),
-        PickerKind::SubtitleLanguage => Value::Language(prefs.and_then(|p| p.subtitle_language.as_deref()).map(plx_plex::plex::languages::canonical).unwrap_or_default().to_string()),
-        PickerKind::SubtitleMode => Value::Mode(prefs.map_or(0, |p| p.subtitle_mode)),
-        PickerKind::ForcedSubtitles => Value::Forced(prefs.map_or(0, |p| p.subtitle_forced)),
+        PickerKind::SubtitleLanguage => Value::Language(local.session.extensions.0.get("ntsmb_subtitle_language").and_then(serde_json::Value::as_str).map(plx_plex::plex::languages::canonical).unwrap_or_default().to_string()),
+        PickerKind::SubtitleMode => Value::Mode(local.session.extensions.0.get("ntsmb_subtitle_mode").and_then(serde_json::Value::as_i64).unwrap_or(0)),
+        PickerKind::ForcedSubtitles => Value::Forced(local.session.extensions.0.get("ntsmb_subtitle_forced").and_then(serde_json::Value::as_i64).unwrap_or(0)),
     }
 }
 /// `PickerKind`'s picker options.
@@ -671,7 +672,12 @@ fn field_options(field: PickerKind, _quality: Quality, _direct_play: DirectPlayM
             let mut result = vec![(if field == PickerKind::AudioLanguage { plx_os::i18n::msg::settings_audio_original() } else { plx_os::i18n::msg::settings_audio_no_preference() }.into(), Value::Language(String::new()))];
             result.extend(plx_plex::plex::languages::picker()
                 .map(|l| (l.name.to_string(), Value::Language(l.code.to_string()))));
-            let current = Value::Language(prefs.and_then(|p| if field == PickerKind::AudioLanguage { p.stated_language.as_deref() } else { p.subtitle_language.as_deref() }).map(plx_plex::plex::languages::canonical).unwrap_or_default().to_string());
+            let current = if field == PickerKind::AudioLanguage {
+                Value::Language(prefs.and_then(|p| p.stated_language.as_deref()).map(plx_plex::plex::languages::canonical).unwrap_or_default().to_string())
+            } else {
+                let session = plx_plex::plex::session::peek();
+                Value::Language(session.extensions.0.get("ntsmb_subtitle_language").and_then(serde_json::Value::as_str).map(plx_plex::plex::languages::canonical).unwrap_or_default().to_string())
+            };
             if !result.iter().any(|(_, v)| *v == current) {
                 if let Value::Language(code) = current { result.push((code.clone(), Value::Language(code))); }
             }
@@ -688,10 +694,8 @@ fn field_readout(field: PickerKind, quality: Quality, direct_play: DirectPlayMod
         PickerKind::DirectPlay => direct_play_readout(direct_play).into(),
         // Force Direct Play plays the original file whatever this says (the row's sentence tells it).
         PickerKind::Quality if direct_play == DirectPlayMode::Forced => plx_os::i18n::msg::settings_playback_overridden_value().into(),
-        PickerKind::ForcedSubtitles => forced_readout(prefs.map_or(0, |p| p.subtitle_forced)).into(),
-        // Only the foreign-audio mode has a short form (es does not fit beside the label); the
-        // other two modes show the picker's own label.
-        PickerKind::SubtitleMode if prefs.is_some_and(|p| p.subtitle_mode == 1) => plx_os::i18n::msg::settings_audio_foreign_short().into(),
+        PickerKind::ForcedSubtitles => forced_readout(local.session.extensions.0.get("ntsmb_subtitle_forced").and_then(serde_json::Value::as_i64).unwrap_or(0)).into(),
+        PickerKind::SubtitleMode if local.session.extensions.0.get("ntsmb_subtitle_mode").and_then(serde_json::Value::as_i64).unwrap_or(0) == 1 => plx_os::i18n::msg::settings_audio_foreign_short().into(),
         PickerKind::SubtitleSize => subtitle_size_label(local.preference::<SubtitleSizePref>()).into(),
         PickerKind::SubtitlePosition => subtitle_position_label(local.preference::<SubtitlePositionPref>()).into(),
         PickerKind::SubtitleColor => subtitle_tone_label(local.preference::<SubtitleTonePref>()).into(),
@@ -742,7 +746,7 @@ fn field_form(inputs: &FieldListInputs<'_>) -> Form<RowId, Action, SettingsPage>
             }
             let account = field.is_account();
             section = section.item(RowId::Field(field), RowKind::Nav(SettingsPage::Picker(field)), Action::Open, row)
-                .disabled(inputs.read_only && !account
+                .disabled(inputs.read_only && !account && !field.is_system_subtitle()
                     && !matches!(field, PickerKind::SkipInterval | PickerKind::InstantDpadSeeking));
         }
         // The Player HUD page closes the Player group.

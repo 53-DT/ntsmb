@@ -55,7 +55,6 @@ pub fn is_video_name(name: &str) -> bool {
 /// Join a current share-relative directory and one directory/file name.
 /// Rejects names that could escape or introduce another path segment.
 pub fn child_path(current: &str, name: &str) -> Result<String, String> {
-    let name = name.trim();
     if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\\') || name.contains('\0') {
         return Err("Invalid SMB entry name".into());
     }
