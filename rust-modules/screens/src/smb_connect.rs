@@ -85,11 +85,10 @@ impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
  fn elem(&self,i:usize)->u32 { SHARE_BASE+i as u32 }
  fn index_of(&self,e:&u32)->Option<usize> { e.checked_sub(SHARE_BASE).map(|i|i as usize).filter(|i|*i<self.rows.len()) }
  fn art(&self,_i:usize)->Art<'_> { Art::Poster(None) }
- fn label(&self,_i:usize)->TileLabel {
-  // SMB tiles draw every filename in the same fixed-width band from overlay().
-  // Leaving the shared TileLabel empty prevents its focused-title marquee from
-  // expanding across neighbouring icons.
-  TileLabel::default()
+ fn label(&self,i:usize)->TileLabel {
+  // Let the shared card-label renderer marquee only the focused filename. The
+  // within-tile window keeps the moving text inside this tile's own width.
+  self.rows.get(i).map(|row|TileLabel::title(&row.entry.name).within_tile()).unwrap_or_default()
  }
  fn a11y_title(&self,i:usize)->Option<Cow<'_,str>> { self.rows.get(i).map(|r|Cow::Borrowed(r.entry.name.as_str())) }
  fn overlay(&self,p:plx_ui::Painter,i:usize,tile:&Tile,measure:&dyn Measure) {
@@ -103,10 +102,15 @@ impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
   let frame=Rect::new(tile.rect.x,tile.rect.y+8.0,tile.rect.w,tile.rect.h-title_h-12.0);
   Label::new(glyph.as_ptr(),68,if row.is_video{[0.88,0.91,0.96,1.0]}else{[0.98,0.72,0.25,1.0]}).h(HAlign::Center).draw(p,frame);
   p.rrect(Rect::new(tile.rect.x+4.0,title_y,tile.rect.w-8.0,title_h),6.0,0.0,theme::scrim_black(0.70));
-  let width=(tile.rect.w-16.0).max(1.0);
-  let (fitted,_)=measure.fit_line_measured(&row.entry.name,width,theme::size::LABEL,tile.focused);
-  Label::new(fitted.as_ptr(),theme::size::LABEL,if tile.focused{theme::TEXT_PRIMARY}else{theme::TEXT_SECONDARY})
-   .h(HAlign::Center).draw(p,Rect::new(tile.rect.x+8.0,title_y,tile.rect.w-16.0,title_h));
+  // The focused title is drawn by Grid's native marquee below the tile; drawing
+  // another copy here would duplicate it. Unfocused tiles retain the compact,
+  // contained caption inside their own tile.
+  if !tile.focused {
+   let width=(tile.rect.w-16.0).max(1.0);
+   let (fitted,_)=measure.fit_line_measured(&row.entry.name,width,theme::size::LABEL,false);
+   Label::new(fitted.as_ptr(),theme::size::LABEL,theme::TEXT_SECONDARY)
+    .h(HAlign::Center).draw(p,Rect::new(tile.rect.x+8.0,title_y,tile.rect.w-16.0,title_h));
+  }
  }
 }
 impl SmbConnectScreen {
