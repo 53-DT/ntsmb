@@ -117,7 +117,8 @@ impl SmbConnectScreen {
     pub fn new(entry: EntryId) -> Self {
         let form = ConnectForm::new();
         // SMB profiles share FinNative's persisted session record.
-        let saved_payload = plx_plex::plex::session::peek().extensions.0
+        let session = plx_plex::plex::session::peek();
+        let saved_payload = session.extensions.0
             .get("ntsmb_connections").and_then(serde_json::Value::as_str);
         // One-time migration from the standalone connection file used by older builds.
         let saved = if let Some(payload) = saved_payload {
