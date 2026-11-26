@@ -11,6 +11,16 @@ impl LibraryBrowser {
         self.selected_item().map(|item| item.id.as_str())
     }
 
+    /// Select and activate a visible item by stable identity.
+    ///
+    /// A missing or filtered-out identity produces no intent and leaves the current focus intact.
+    pub fn activate_media_id(&mut self, media_id: &str) -> crate::LibraryIntent {
+        if !self.select_media_id(media_id) {
+            return crate::LibraryIntent::None;
+        }
+        self.activate_selected()
+    }
+
     /// Focus a visible item by its stable media identity.
     ///
     /// Returns true when the item is present in the current filtered listing. A missing or
@@ -48,6 +58,18 @@ mod tests {
 
         browser.set_folder(folder(vec![item("B", "Films/B"), item("A", "Films/A")]));
         assert!(browser.select_media_id(&saved_id));
+        assert_eq!(browser.selected_media_id(), Some("Films/B"));
+    }
+
+    #[test]
+    fn activation_by_identity_selects_the_requested_media_without_row_assumptions() {
+        let mut browser = LibraryBrowser::default();
+        browser.set_folder(folder(vec![item("A", "Films/A"), item("B", "Films/B")]));
+        assert_eq!(browser.activate_media_id("Films/B"), crate::LibraryIntent::PlayMedia {
+            source_id: "nas".into(), path: "Films/B".into()
+        });
+        assert_eq!(browser.selected_media_id(), Some("Films/B"));
+        assert_eq!(browser.activate_media_id("Films/missing"), crate::LibraryIntent::None);
         assert_eq!(browser.selected_media_id(), Some("Films/B"));
     }
 
