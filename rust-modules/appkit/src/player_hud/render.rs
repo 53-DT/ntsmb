@@ -478,6 +478,7 @@ where
         matches!(op, DrawOp::Text { bind, .. } if bind == "title.main")
     });
     if !state_has_title
+        && f.open & OPEN_INFO == 0
         && f.meta.playing().is_some_and(|item| item.rk == "smb-local")
     {
         if let Some(compact) = compact {

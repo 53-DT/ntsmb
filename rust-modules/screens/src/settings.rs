@@ -1572,6 +1572,9 @@ impl RootPage {
         match action {
             Action::Door => {}
             Action::SwitchProfile => {
+                // Settings is a surface over the current route. Dismiss it in the same
+                // drain as the route request, otherwise the new SMB picker stays underneath it.
+                fx.push(Fx::Nav(plx_machine::machine::NavOp::Dismiss(self.entry)));
                 fx.push(Fx::App(AppFx::Loop(super::registry::LoopReq::SwitchSmbConnection)));
             }
             Action::AutoSignIn => {

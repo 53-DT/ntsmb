@@ -689,7 +689,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
    let add_r=Self::saved_footer_rect(NEW_CONNECTION).unwrap();
    Button::new(add.as_ptr(),theme::size::BODY,add_r).focused(focus==Some(NEW_CONNECTION)).draw(&Env::inert(),p);
    f.stop(p,Stop{key:FocusKey{entry:self.entry,elem:NEW_CONNECTION},rect:add_r,rest_rect:add_r,clip:Rect::FULL,hover:plx_ui::screen::Hover::Focus,activate:plx_ui::screen::Activate::Press});
-   let remove=CString::new(if self.remove_armed{"Select server to remove"}else{"Remove selected"}).unwrap();
+   let remove=CString::new(if self.remove_armed{"Select server"}else{"Remove selected"}).unwrap();
    let remove_r=Self::saved_footer_rect(REMOVE_CONNECTION).unwrap();
    Button::new(remove.as_ptr(),theme::size::BODY,remove_r).focused(focus==Some(REMOVE_CONNECTION)).draw(&Env::inert(),p);
    f.stop(p,Stop{key:FocusKey{entry:self.entry,elem:REMOVE_CONNECTION},rect:remove_r,rest_rect:remove_r,clip:Rect::FULL,hover:plx_ui::screen::Hover::Focus,activate:plx_ui::screen::Activate::Press});
