@@ -259,3 +259,41 @@ mod tests {
     }
 
 }
+
+
+/// Translate an SMB directory result into the backend-neutral library contract.
+/// Path and source identity are supplied by the caller; no SMB credential or protocol
+/// detail is exposed through the returned model.
+pub fn to_core_folder(
+    source_id: &str,
+    path: &str,
+    entries: impl IntoIterator<Item = Entry>,
+) -> ntsmb_core::MediaFolder {
+    let items = entries.into_iter().map(|entry| {
+        let is_directory = entry.is_directory;
+        let media_type = if is_directory {
+            ntsmb_core::MediaType::Folder
+        } else if is_video_name(&entry.name) {
+            ntsmb_core::MediaType::Video
+        } else {
+            ntsmb_core::MediaType::Other
+        };
+        let item_path = child_path(path, &entry.name)
+            .unwrap_or_else(|_| entry.name.clone());
+        ntsmb_core::MediaItem {
+            id: format!("{source_id}:{item_path}"),
+            name: entry.name,
+            path: item_path,
+            size_bytes: (!is_directory).then_some(entry.size),
+            is_directory,
+            media_type,
+        }
+    }).collect();
+
+    ntsmb_core::MediaFolder {
+        source_id: source_id.to_owned(),
+        path: path.trim_matches('/').to_owned(),
+        parent_path: parent_path(path),
+        items,
+    }
+}
