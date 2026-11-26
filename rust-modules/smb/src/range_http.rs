@@ -54,6 +54,8 @@ impl BridgeStats {
     }
 }
 
+impl ntsmb_core::PlaybackLease for RangeServer {}
+
 impl RangeServer {
     /// Start serving the already-open SMB reader on an ephemeral loopback port.
     pub fn start(reader: FileReader) -> Result<Self, String> {
