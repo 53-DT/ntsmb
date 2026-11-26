@@ -1631,6 +1631,7 @@ dependencies = [
  "image",
  "libc",
  "plx_appkit",
+ "ntsmb_library",
  "plx_base",
  "plx_data",
  "plx_gfx",
