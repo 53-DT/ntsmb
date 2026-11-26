@@ -490,6 +490,8 @@ pub struct PlayerAdapter {
     start_hooks: Option<StartHooks>,
     /// One-shot app-supplied URL declaration (SMB/local browser); route URL takes over after resolve.
     external_play_url: std::sync::Mutex<Option<plx_playback_contract::playurl::PlayUrl>>,
+    /// Backend-neutral descriptor for the current direct-file playback.
+    external_source: Option<ntsmb_core::PlaybackSource>,
     /// Loopback SMB transport kept alive for the current direct-file playback.
     playback_lease: Option<Box<dyn ntsmb_core::PlaybackLease>>,
     /// The test fixtures' handle on the Feed set boxed behind `physical`
@@ -586,6 +588,7 @@ impl PlayerAdapter {
             sink: inert_sink,
             start_hooks: None,
             external_play_url: std::sync::Mutex::new(None),
+            external_source: None,
             playback_lease: None,
             #[cfg(test)]
             probe: None,
@@ -1162,11 +1165,19 @@ impl PlayerAdapter {
     /// The player consumes it once; the route then owns the URL for seeks and reloads.
     pub fn set_external_playback(
         &mut self,
+        source: ntsmb_core::PlaybackSource,
         play: plx_playback_contract::playurl::PlayUrl,
         playback_lease: Box<dyn ntsmb_core::PlaybackLease>,
     ) {
+        debug_assert_eq!(source.uri, play.url, "neutral source URI must match the probed player URL");
+        self.external_source = Some(source);
         *self.external_play_url.get_mut().unwrap_or_else(|p| p.into_inner()) = Some(play);
         self.playback_lease = Some(playback_lease);
+    }
+
+    /// The active backend-neutral source descriptor, if a direct source is staged or playing.
+    pub fn external_source(&self) -> Option<&ntsmb_core::PlaybackSource> {
+        self.external_source.as_ref()
     }
 
     /// Discard an app-supplied direct-file source when the player refuses to start it.
@@ -1177,6 +1188,7 @@ impl PlayerAdapter {
 
     pub fn clear_external_playback(&mut self) {
         *self.external_play_url.get_mut().unwrap_or_else(|p| p.into_inner()) = None;
+        self.external_source = None;
         self.playback_lease.take();
     }
 
