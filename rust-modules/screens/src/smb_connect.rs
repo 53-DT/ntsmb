@@ -566,7 +566,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Focusable<H
   }
   if self.controller.phase()==Phase::Browsing && !self.rows.is_empty() {
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Grid{cols:6,holes:&[]},seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Geometric;4],extent:Rect::new(MARGIN_X,324.0,SCR_W-2.0*MARGIN_X,CARD_W*0.75),len:self.rows.len(),elem:ElemKind::Card});
-   out.push(GroupSpec{id:PROFILE_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent:Self::profile_rect(),len:1,elem:ElemKind::Bare});
+   out.push(GroupSpec{id:PROFILE_GROUP,kind:GroupKind::Free,seat:Seat::ProjectedFrom(FORM_GROUP),reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent:Self::profile_rect(),len:1,elem:ElemKind::Bare});
   } else {
    let extent=ids.iter().filter_map(|e|self.stop_rect(*e,cx.measure)).reduce(|a,b|a.union(b)).unwrap_or(Rect::FULL);
    out.push(GroupSpec{id:FORM_GROUP,kind:GroupKind::Free,seat:Seat::First,reachable:AxisMask::BOTH,edge:[EdgeRule::Stop;4],extent,len:ids.len(),elem:ElemKind::Bare});

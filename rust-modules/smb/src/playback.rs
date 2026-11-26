@@ -30,10 +30,11 @@ impl plx_play_feed::ProbeSource for SmbProbeSource {
 }
 
 pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlayback, String> {
-    let reader = std::sync::Arc::new(session.open_file_blocking(path)?);
+    let reader = std::sync::Arc::new(session.open_file_blocking(path)
+        .map_err(|error| format!("Could not open SMB file '{path}': {error}"))?);
     let source = SmbProbeSource { size: reader.size(), reader: reader.clone() };
     let probe = plx_play_feed::probe_source(std::sync::Arc::new(source))
-        .map_err(|error| format!("FFmpeg custom-AVIO probe failed: {error}"))?;
+        .map_err(|error| format!("Could not inspect SMB file '{path}' (FFmpeg custom-AVIO probe): {error}"))?;
     let bridge = RangeServer::start_shared_with_session(reader, session)?;
     let video_codec = probe
         .video_codec

@@ -824,9 +824,21 @@ fn begin_product_frame(app: &mut App) -> Frame {
         app.note_presentation_damage(plx_machine::present::Provenance::Landing(plx_machine::machine::MachineId::Session));
     }
     let bridge = app.runtime.bridge(&mut app.bridge);
+    let smb_local = bridge.metadata_view().playing().is_some_and(|item| item.rk == "smb-local");
     let mut frame = Frame::begin(&app.player.session, bridge.metadata_view());
     frame.ctrl = plx_appkit::player_hud::slot_with_preferences(&app.player.session,
         bridge.metadata_view(), bridge.marker_preferences());
+    // SMB playback has its own folder queue rather than a Plex episode queue. The HUD model
+    // already publishes these neighbours, but the focus/visibility slot is a separate publication:
+    // feed the same facts into it so Previous and Next are actually drawn and focusable.
+    if smb_local {
+        let controls = plx_appkit::player_hud::Controls::for_item(
+            true,
+            plx_smb::playback::has_autoplay_previous(),
+            plx_smb::playback::has_autoplay_next(),
+        );
+        frame.ctrl = plx_appkit::player_hud::ControlSlot::Discs(controls);
+    }
     frame
 }
 

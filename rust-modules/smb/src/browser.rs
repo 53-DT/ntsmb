@@ -217,6 +217,12 @@ mod tests {
     }
 
     #[test]
+    fn child_path_preserves_unicode_and_nonbreaking_spaces_exactly() {
+        let name = "My Hero Academia S01E01\u{00a0}- “Izuku Midoriya-Origin”.mkv";
+        assert_eq!(child_path("Season 1", name).unwrap(), format!("Season 1/{name}"));
+    }
+
+    #[test]
     fn breadcrumbs_and_parent_path_are_share_relative() {
         assert_eq!(breadcrumbs("Movies/Drama/"), ["Movies", "Drama"]);
         assert_eq!(breadcrumbs(""), Vec::<String>::new());

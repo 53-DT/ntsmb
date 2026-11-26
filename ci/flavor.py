@@ -106,8 +106,9 @@ def appinfo_for(flavor: str, nightly_date: "str | None" = None) -> dict:
     # at a list — `dev/listApps` and SAM's own dialogs show the title, not the icon. Nightly's own
     # title is a product decision ("PlxNative Nightly", capitalised) rather than the bare lowercase
     # suffix debug uses, so it is spelled out rather than titlecased generically.
-    suffix = "Nightly" if flavor == "nightly" else flavor
-    a["title"] = f"{a['title']} {suffix}"
+    if flavor != "debug":
+        suffix = "Nightly" if flavor == "nightly" else flavor
+        a["title"] = f"{a['title']} {suffix}"
     # NIGHTLY ONLY: the package version itself moves — to the next minor (or next patch, on a
     # maintenance line) with the CUT DATE as its patch (`version_rule.nightly_package_triplet`),
     # e.g. `0.7.20260919`. Two properties are wanted and both come from that. It is ahead of
