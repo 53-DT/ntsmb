@@ -322,10 +322,7 @@ impl SmbConnectScreen {
             return ntsmb_library::LibraryIntent::None;
         };
         let media_id = format!("{source_id}:{path}");
-        if !self.library_state.select_media_id(&media_id) {
-            return ntsmb_library::LibraryIntent::None;
-        }
-        self.library_state.activate_selected()
+        self.library_state.activate_media_id(&media_id)
     }
 
     fn activate_browser_index(&mut self, index: usize) {
