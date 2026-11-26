@@ -1395,6 +1395,7 @@ dependencies = [
  "encoding_rs",
  "libc",
  "ntsmb_core",
+ "ntsmb_player",
  "plx_base",
  "plx_data",
  "plx_machine",
