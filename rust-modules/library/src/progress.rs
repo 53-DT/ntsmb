@@ -1,5 +1,5 @@
 //! Persistence bridge for the backend-neutral library's watch progress.
-use ntsmb_core::{MediaId, PlaybackState, PlaybackStateRepository};
+use ntsmb_core::{MediaId, PlaybackStateRepository};
 use crate::LibraryBrowser;
 
 /// Load a group of saved progress records into the library view model.
@@ -46,6 +46,7 @@ pub fn delete_progress<R: PlaybackStateRepository>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ntsmb_core::PlaybackState;
     use std::{collections::HashMap, sync::Mutex};
 
     #[derive(Default)]
