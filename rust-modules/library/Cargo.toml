@@ -1,0 +1,17 @@
+[package]
+name = "ntsmb_library"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Backend-neutral media library browsing state for NTSMB."
+publish = false
+
+[lib]
+name = "ntsmb_library"
+crate-type = ["rlib"]
+
+[dependencies]
+ntsmb_core = { path = "../core" }
+
+[lints]
+workspace = true
