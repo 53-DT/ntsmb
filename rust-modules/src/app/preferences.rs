@@ -82,6 +82,7 @@ pub(super) fn execute(command: PreferenceCmd) {
         // Store them in the existing install-wide preference keys on the session record; the
         // normal unseated boot restore publishes them back into the player cells.
         PreferenceCmd::SystemSkipInterval { interval, reply } => {
+            plx_media::route::restore_skip_interval(interval);
             let _ = plx_base::storage_worker::submit_retained(move || {
                 let mut already = false;
                 let saved = plx_plex::plex::session::update_guarded_with_outcome(|current| {
@@ -93,6 +94,7 @@ pub(super) fn execute(command: PreferenceCmd) {
             });
         }
         PreferenceCmd::SystemInstantDpadSeeking { seeking, reply } => {
+            plx_media::route::restore_instant_dpad_seeking(seeking);
             let _ = plx_base::storage_worker::submit_retained(move || {
                 let mut already = false;
                 let saved = plx_plex::plex::session::update_guarded_with_outcome(|current| {
