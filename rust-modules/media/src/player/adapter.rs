@@ -490,8 +490,8 @@ pub struct PlayerAdapter {
     start_hooks: Option<StartHooks>,
     /// One-shot app-supplied URL declaration (SMB/local browser); route URL takes over after resolve.
     external_play_url: std::sync::Mutex<Option<plx_playback_contract::playurl::PlayUrl>>,
-    /// Backend-neutral descriptor for the current direct-file playback.
-    external_source: Option<ntsmb_core::PlaybackSource>,
+    /// Backend-neutral player session for the current direct-file playback.
+    player_session: ntsmb_player::PlayerController,
     /// Loopback SMB transport kept alive for the current direct-file playback.
     playback_lease: Option<Box<dyn ntsmb_core::PlaybackLease>>,
     /// The test fixtures' handle on the Feed set boxed behind `physical`
@@ -588,7 +588,7 @@ impl PlayerAdapter {
             sink: inert_sink,
             start_hooks: None,
             external_play_url: std::sync::Mutex::new(None),
-            external_source: None,
+            player_session: ntsmb_player::PlayerController::new(),
             playback_lease: None,
             #[cfg(test)]
             probe: None,
@@ -1170,14 +1170,24 @@ impl PlayerAdapter {
         playback_lease: Box<dyn ntsmb_core::PlaybackLease>,
     ) {
         debug_assert_eq!(source.uri, play.url, "neutral source URI must match the probed player URL");
-        self.external_source = Some(source);
+        let _load = self.player_session.load(source);
         *self.external_play_url.get_mut().unwrap_or_else(|p| p.into_inner()) = Some(play);
         self.playback_lease = Some(playback_lease);
     }
 
     /// The active backend-neutral source descriptor, if a direct source is staged or playing.
     pub fn external_source(&self) -> Option<&ntsmb_core::PlaybackSource> {
-        self.external_source.as_ref()
+        self.player_session.source()
+    }
+
+    /// Read-only neutral player state for application/UI consumers during the migration.
+    pub fn player_session(&self) -> &ntsmb_player::PlayerController {
+        &self.player_session
+    }
+
+    /// Mirror successful admission into the neutral session; the native engine remains authoritative.
+    pub fn report_external_playing(&mut self) {
+        self.player_session.report_playing();
     }
 
     /// Discard an app-supplied direct-file source when the player refuses to start it.
@@ -1188,7 +1198,7 @@ impl PlayerAdapter {
 
     pub fn clear_external_playback(&mut self) {
         *self.external_play_url.get_mut().unwrap_or_else(|p| p.into_inner()) = None;
-        self.external_source = None;
+        self.player_session.clear();
         self.playback_lease.take();
     }
 
