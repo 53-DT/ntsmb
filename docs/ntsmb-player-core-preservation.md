@@ -30,12 +30,13 @@ decision. The neutral contract now lives in `ntsmb_core`:
 - `NativeVideoVerdict`: `Available`, `Blocked(reason)`, or `NotApplicable`.
 - `NativeVideoRepairFailure`: stable failure categories, including timeout and unsupported.
 - `NativeVideoRepairState`: process-lifetime `Idle` / `Running` / `Repaired` / `Failed`.
+- `NativeVideoRepairAttempt`: the one-shot process-lifetime policy, including fail-closed unsupported-device handling and stale/duplicate receipt rejection. It has no reset API and is now implemented in `ntsmb_core`, not the legacy media machine.
 - `NativeVideoRepairPort`: the player-facing `verdict()` and `repair()` boundary.
 
 `plx_os::tv::native_video` re-exports those neutral types and provides
 `InstalledRepairPort`, which delegates to the selected platform's installed repair hook.
-The app composition injects that port into `PlayerAdapter`; the adapter spends the one-shot
-authority and runs the repair off the frame thread. The player core owns the decision and state,
+The app composition injects that port into `PlayerAdapter`; the adapter spends the core-owned one-shot
+authority and runs the repair off the frame thread. `plx_media::player::machine::RepairAttempt` remains a compatibility re-export so existing app/screen wiring does not change during extraction. The player core owns the decision and state,
 not the privileged command or its platform identity checks.
 
 Do not move the Homebrew Channel service call, jailer command, install-path validation, or
@@ -53,7 +54,8 @@ the OS/platform boundary. This keeps NTSMB's player reusable without weakening t
   repair hook. Its current install identity must remain unchanged until the user explicitly supplies
   the final bundle ID.
 - `rust-modules/os/src/tv.rs`: optional platform repair hook.
-- `rust-modules/media/src/player/machine.rs`: process-lifetime repair authority.
+- `rust-modules/core/src/lib.rs`: process-lifetime `NativeVideoRepairAttempt` policy and its fail-closed tests.
+- `rust-modules/media/src/player/machine.rs`: compatibility re-export of the core repair authority.
 - `rust-modules/media/src/player/adapter.rs`: off-frame repair worker and result polling.
 - `rust-modules/screens/src/player/mod.rs`: failure action and explicit confirmation UI.
 - `rust-modules/src/app/run.rs`: polling that remains active even when the player page is absent.
