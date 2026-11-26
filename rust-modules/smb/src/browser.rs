@@ -297,3 +297,43 @@ pub fn to_core_folder(
         items,
     }
 }
+
+
+#[cfg(test)]
+mod core_contract_tests {
+    use super::*;
+
+    #[test]
+    fn smb_listing_maps_to_backend_neutral_folder_contract() {
+        let folder = to_core_folder(
+            "nas-movies",
+            "Films/Drama",
+            vec![
+                Entry { name: "Arrival.mkv".into(), size: 1024, is_directory: false },
+                Entry { name: "Extras".into(), size: 0, is_directory: true },
+                Entry { name: "notes.txt".into(), size: 20, is_directory: false },
+            ],
+        );
+
+        assert_eq!(folder.source_id, "nas-movies");
+        assert_eq!(folder.path, "Films/Drama");
+        assert_eq!(folder.parent_path.as_deref(), Some("Films"));
+        assert_eq!(folder.items.len(), 3);
+        assert_eq!(folder.items[0].media_type, ntsmb_core::MediaType::Video);
+        assert_eq!(folder.items[0].path, "Films/Drama/Arrival.mkv");
+        assert_eq!(folder.items[1].media_type, ntsmb_core::MediaType::Folder);
+        assert_eq!(folder.items[2].media_type, ntsmb_core::MediaType::Other);
+    }
+
+    #[test]
+    fn root_listing_maps_without_a_parent() {
+        let folder = to_core_folder(
+            "nas-movies",
+            "",
+            vec![Entry { name: "Movie.mp4".into(), size: 7, is_directory: false }],
+        );
+        assert_eq!(folder.path, "");
+        assert_eq!(folder.parent_path, None);
+        assert_eq!(folder.items[0].path, "Movie.mp4");
+    }
+}
