@@ -215,4 +215,26 @@ mod tests {
         assert!(ConnectionProfile::new("nas.local", 0, "alice", false).is_err());
         assert!(ConnectionProfile::new("nas.local", 445, "", false).is_err());
     }
+    #[test]
+    fn core_profile_mapping_never_exposes_credential_envelope() {
+        let mut profile = ConnectionProfile::new("nas.local", 445, "alice", false).unwrap();
+        profile.share = Some("Movies".into());
+        profile.credential = Some(CredentialEnvelope {
+            backend: "keymanager3".into(), key: "key".into(), iv: "iv".into(), data: "ciphertext".into(),
+        });
+        let neutral = profile.to_core_profile("profile-1", "Home NAS");
+        assert_eq!(neutral.id, "profile-1");
+        assert_eq!(neutral.name, "Home NAS");
+        assert_eq!(neutral.source_id.as_deref(), Some("nas.local:445:Movies"));
+        assert_eq!(neutral.username.as_deref(), Some("alice"));
+        assert!(!format!("{neutral:?}").contains("ciphertext"));
+    }
+
+    #[test]
+    fn guest_core_profile_does_not_expose_username() {
+        let profile = ConnectionProfile::new("nas.local", 445, "", true).unwrap();
+        let neutral = profile.to_core_profile("guest", "Guest NAS");
+        assert!(neutral.username.is_none());
+        assert!(neutral.is_guest);
+    }
 }
