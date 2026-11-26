@@ -4,6 +4,8 @@ use crate::{range_http::RangeServer, Session};
 
 /// A prepared direct-play source. Keep the bridge alive until playback has stopped.
 pub struct PreparedPlayback {
+    /// Backend-neutral source descriptor handed to the player core.
+    pub source: ntsmb_core::PlaybackSource,
     pub play: plx_playback_contract::playurl::PlayUrl,
     pub bridge: RangeServer,
     /// Final path component used by the existing player title/caption.
@@ -70,7 +72,14 @@ pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlay
     };
 
     let file_name = path.rsplit(|ch| ch == '/' || ch == '\\').find(|part| !part.is_empty()).unwrap_or(path).to_owned();
-    Ok(PreparedPlayback { play, bridge, file_name, probe })
+    let source = ntsmb_core::PlaybackSource {
+        source_id: "smb".to_owned(),
+        uri: bridge.url().to_owned(),
+        display_name: file_name.clone(),
+        size_bytes: None,
+        mime_type: None,
+    };
+    Ok(PreparedPlayback { source, play, bridge, file_name, probe })
 }
 
 
