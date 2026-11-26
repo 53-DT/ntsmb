@@ -91,9 +91,13 @@ impl PlayerController {
 
     /// Accept a readout from the engine. Duration is optional until probing completes.
     pub fn report_position(&mut self, position_ms: u64, duration_ms: Option<u64>) {
-        // Ignore late engine readouts after the session has been cleared. The adapter may receive
-        // a final asynchronous notification while native teardown is completing.
-        if self.source.is_none() || self.snapshot.status == PlayerStatus::Empty { return; }
+        // Readouts are accepted only while this session can still make progress. A delayed
+        // position callback must not overwrite the final position after finish/stop or mutate a
+        // failed session while the native engine is tearing down.
+        if self.source.is_none() || !matches!(
+            self.snapshot.status,
+            PlayerStatus::Ready | PlayerStatus::Playing | PlayerStatus::Paused
+        ) { return; }
         self.snapshot.duration_ms = duration_ms;
         self.snapshot.position_ms = duration_ms.map_or(position_ms, |duration| position_ms.min(duration));
     }
@@ -105,7 +109,10 @@ impl PlayerController {
     }
 
     pub fn report_playing(&mut self) {
-        if self.source.is_some() {
+        if self.source.is_some() && matches!(
+            self.snapshot.status,
+            PlayerStatus::Ready | PlayerStatus::Playing | PlayerStatus::Paused
+        ) {
             self.snapshot.status = PlayerStatus::Playing;
         }
     }
@@ -193,11 +200,42 @@ mod tests {
 
         player.report_position(9_000, Some(10_000));
         player.report_paused();
+        player.report_playing();
         player.report_finished();
         player.report_error("late teardown error");
 
         assert_eq!(player.snapshot(), &PlayerSnapshot::default());
         assert!(player.source().is_none());
+    }
+
+    #[test]
+    fn delayed_engine_reports_cannot_resurrect_stopped_or_failed_sessions() {
+        let mut finished = PlayerController::new();
+        finished.load(source());
+        finished.report_position(8_000, Some(10_000));
+        finished.report_finished();
+        finished.report_position(2_000, Some(10_000));
+        finished.report_playing();
+        assert_eq!(finished.snapshot().status, PlayerStatus::Stopped);
+        assert_eq!(finished.snapshot().position_ms, 10_000);
+
+        let mut stopped = PlayerController::new();
+        stopped.load(source());
+        stopped.report_position(4_000, Some(10_000));
+        assert_eq!(stopped.stop(), Some(PlayerCommand::Stop));
+        stopped.report_position(9_000, Some(10_000));
+        stopped.report_playing();
+        assert_eq!(stopped.snapshot().status, PlayerStatus::Stopped);
+        assert_eq!(stopped.snapshot().position_ms, 0);
+
+        let mut failed = PlayerController::new();
+        failed.load(source());
+        failed.report_error("decoder failed");
+        failed.report_position(7_000, Some(10_000));
+        failed.report_playing();
+        assert_eq!(failed.snapshot().status, PlayerStatus::Failed);
+        assert_eq!(failed.snapshot().position_ms, 0);
+        assert_eq!(failed.snapshot().error.as_deref(), Some("decoder failed"));
     }
 
     #[test]
