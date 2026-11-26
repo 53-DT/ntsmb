@@ -46,7 +46,7 @@ pub(crate) fn start_smb_playback(
 ) -> bool {
     let (item, now_playing) = smb_playing_item(&prepared.probe, &prepared.file_name);
     let subtitle_count = item.subs.len();
-    pa.set_external_playback(prepared.play, Box::new(prepared.bridge));
+    pa.set_external_playback(prepared.source, prepared.play, Box::new(prepared.bridge));
     plx_media::route::clear_url(ps);
     let started = start_playback(ps, pa, 0, Origin::Here, HUD_HEADLESS_MS, None, pages, bridge);
     if started {
