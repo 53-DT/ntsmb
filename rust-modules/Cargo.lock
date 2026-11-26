@@ -1193,6 +1193,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ntsmb_player"
+version = "0.1.0"
+dependencies = [
+ "ntsmb_core",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1633,6 +1640,7 @@ dependencies = [
  "libc",
  "plx_appkit",
  "ntsmb_library",
+ "ntsmb_player",
  "plx_base",
  "plx_data",
  "plx_gfx",
