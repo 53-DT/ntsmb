@@ -950,7 +950,7 @@ pub(crate) fn player_requests(
             }
             PlayerReq::RepairSandbox => {
                 if player.session.jail_load_blocked {
-                    pa.repair_sandbox(&mut player.repair, plx_os::tv::native_video::blocked());
+                    pa.repair_sandbox(&mut player.repair, std::sync::Arc::new(plx_os::tv::native_video::InstalledRepairPort));
                     player.session.repair_status = player.repair.state();
                     pages.present.note_in_scope(plx_machine::present::Scope::Page, plx_machine::present::PresentEvent::Damage(plx_machine::present::Provenance::Input));
                 }
