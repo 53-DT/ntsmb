@@ -4,23 +4,7 @@
 //! then `NotApplicable`.
 use std::sync::OnceLock;
 
-/// What the boot-time probe found, cached for the process.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub use ntsmb_core::NativeVideoVerdict as Verdict;\n\n/*\npub enum Verdict {
-    /// The platform probed and the video path is there. On webOS: the SoC matched the affected
-    /// family and `/dev/rtkmem` is readable.
-    Available,
-    /// The platform probed and the video path is not usable here, so a Load must not be attempted.
-    /// The reason is a constant word the platform names; it is printed, in the log and as the
-    /// report's context ([`context`]), and no shared code branches on it. On webOS: the SoC matched
-    /// the affected family and `/dev/rtkmem` is missing (or unreadable) from this jail, reason
-    /// `"missing"`.
-    Blocked(&'static str),
-    /// There is nothing to ask: nothing was probed, or the platform's probe found the set outside
-    /// the family it asks about. On webOS: the SoC did not match, so `/dev/rtkmem` was never probed.
-    NotApplicable,
-}
-*/
+pub use ntsmb_core::NativeVideoVerdict as Verdict;
 
 static VERDICT: OnceLock<Verdict> = OnceLock::new();
 
@@ -94,30 +78,8 @@ pub fn context() -> &'static str {
     word(verdict_of(&VERDICT))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub use ntsmb_core::NativeVideoRepairFailure as Failure;\n/*\npub enum Failure {
-    StartFailed,
-    HbcUnavailable,
-    NotRoot,
-    CommandFailed,
-    // The simulator has no LS2 timeout; development fixtures and tests still construct it. The
-    // enum is public to the application crate, so the variant is never dead in this crate.
-    Timeout,
-    Unreadable,
-    Unsupported,
-}
-*/
+pub use ntsmb_core::NativeVideoRepairFailure as Failure;
 pub use ntsmb_core::NativeVideoRepairState as State;
-
-/*
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum State {
-    Idle,
-    Running,
-    Repaired,
-    Failed(Failure),
-}
-*/
 
 /// The OS-layer implementation of the neutral player repair port. The platform hook remains
 /// installed by the selected platform crate; no privileged implementation enters core/player.
