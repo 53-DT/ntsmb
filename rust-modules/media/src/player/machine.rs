@@ -145,8 +145,8 @@ impl RepairAttempt {
     /// The single issued token can land only once. Wrong/duplicate completions cannot rewrite it.
     pub fn complete(&mut self, token: u64, result: Result<(), ntsmb_core::NativeVideoRepairFailure>) -> bool {
         use ntsmb_core::NativeVideoRepairState;
-        if token != 1 || self.state != State::Running { return false; }
-        self.state = match result { Ok(()) => State::Repaired, Err(e) => State::Failed(e) };
+        if token != 1 || self.state != NativeVideoRepairState::Running { return false; }
+        self.state = match result { Ok(()) => NativeVideoRepairState::Repaired, Err(e) => NativeVideoRepairState::Failed(e) };
         true
     }
 }
