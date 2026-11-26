@@ -128,46 +128,5 @@ impl Default for Player {
     }
 }
 
-/// Logical repair authority; resource handles live in PlayerAdapter. No reset-on-playback API.
-pub struct RepairAttempt {
-    state: ntsmb_core::NativeVideoRepairState,
-}
-impl RepairAttempt {
-    pub const fn new() -> Self { Self { state: ntsmb_core::NativeVideoRepairState::Idle } }
-    pub fn state(&self) -> ntsmb_core::NativeVideoRepairState { self.state }
-    pub fn begin(&mut self, supported: bool) -> Option<u64> {
-        use plx_os::tv::native_video::{State, Failure};
-        if self.state != State::Idle { return None; }
-        if !supported { self.state = State::Failed(Failure::Unsupported); return None; }
-        self.state = State::Running;
-        Some(1)
-    }
-    /// The single issued token can land only once. Wrong/duplicate completions cannot rewrite it.
-    pub fn complete(&mut self, token: u64, result: Result<(), ntsmb_core::NativeVideoRepairFailure>) -> bool {
-        use ntsmb_core::NativeVideoRepairState;
-        if token != 1 || self.state != NativeVideoRepairState::Running { return false; }
-        self.state = match result { Ok(()) => NativeVideoRepairState::Repaired, Err(e) => NativeVideoRepairState::Failed(e) };
-        true
-    }
-}
-
-#[cfg(test)]
-mod repair_tests {
-    use super::*;
-    use ntsmb_core::NativeVideoRepairFailure;
-    // `repair_survives_screen_and_session_recreation_and_rejects_stale_completions` builds a
-    // `PlayerScreen`, which `player` may not name: it lives in `screens::player`'s
-    // `repair_confirmation_tests`, beside the screen it recreates.
-    #[test]
-    fn every_terminal_result_spends_the_process_attempt() {
-        for result in [Ok(()), Err(Failure::StartFailed), Err(Failure::HbcUnavailable), Err(Failure::NotRoot), Err(Failure::CommandFailed), Err(Failure::Timeout), Err(Failure::Unreadable)] {
-            let mut owner = RepairAttempt::new();
-            let token = owner.begin(true).unwrap();
-            assert!(owner.complete(token, result));
-            assert_eq!(owner.begin(true), None);
-        }
-        let mut owner = RepairAttempt::new();
-        assert_eq!(owner.begin(false), None);
-        assert_eq!(owner.begin(true), None);
-    }
-}
+/// Re-export the neutral, process-lifetime repair authority for existing app composition.
+pub use ntsmb_core::NativeVideoRepairAttempt as RepairAttempt;
