@@ -1,5 +1,5 @@
 //! Conversion from neutral player snapshots to the core's persisted progress contract.
-use ntsmb_core::PlaybackState;
+use ntsmb_core::{PlaybackState, PlaybackStateRepository};
 use crate::{PlayerSnapshot, PlayerStatus};
 
 impl PlayerSnapshot {
@@ -22,9 +22,47 @@ impl PlayerSnapshot {
     }
 }
 
+/// Persist a snapshot using only the core repository contract.
+/// Returns false when the snapshot cannot represent a valid resume point.
+pub fn persist_snapshot<R: PlaybackStateRepository>(
+    repository: &R,
+    snapshot: &PlayerSnapshot,
+    media_id: impl Into<String>,
+) -> Result<bool, String> {
+    let Some(state) = snapshot.to_playback_state(media_id) else { return Ok(false); };
+    repository.save_state(&state)?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{collections::HashMap, sync::Mutex};
+
+    #[derive(Default)]
+    struct MemoryRepository(Mutex<HashMap<String, PlaybackState>>);
+
+    impl PlaybackStateRepository for MemoryRepository {
+        fn load_state(&self, id: &str) -> Result<Option<PlaybackState>, String> {
+            Ok(self.0.lock().unwrap().get(id).cloned())
+        }
+        fn save_state(&self, state: &PlaybackState) -> Result<(), String> {
+            self.0.lock().unwrap().insert(state.media_id.clone(), state.clone());
+            Ok(())
+        }
+        fn delete_state(&self, id: &str) -> Result<(), String> {
+            self.0.lock().unwrap().remove(id);
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct FailingRepository;
+    impl PlaybackStateRepository for FailingRepository {
+        fn load_state(&self, _: &str) -> Result<Option<PlaybackState>, String> { Ok(None) }
+        fn save_state(&self, _: &PlaybackState) -> Result<(), String> { Err("disk unavailable".into()) }
+        fn delete_state(&self, _: &str) -> Result<(), String> { Ok(()) }
+    }
 
     #[test]
     fn active_session_exports_resume_position_without_marking_complete() {
@@ -56,7 +94,28 @@ mod tests {
         assert!(ready.to_playback_state("movie").is_none());
         let zero_duration = PlayerSnapshot { status: PlayerStatus::Playing, position_ms: 5,
             duration_ms: Some(0), error: None };
-        assert!(zero_duration.to_playback_state("movie").is_none(),
-            "a zero duration is not a valid resume point");
+        assert!(zero_duration.to_playback_state("movie").is_none());
+    }
+
+    #[test]
+    fn persist_snapshot_saves_valid_record_and_ignores_invalid_snapshots() {
+        let repository = MemoryRepository::default();
+        let snapshot = PlayerSnapshot { status: PlayerStatus::Playing, position_ms: 12_345,
+            duration_ms: Some(90_000), error: None };
+        assert!(persist_snapshot(&repository, &snapshot, "movie-id").unwrap());
+        assert_eq!(repository.load_state("movie-id").unwrap(), Some(PlaybackState {
+            media_id: "movie-id".into(), position_ms: 12_345, duration_ms: Some(90_000),
+            completed: false,
+        }));
+        assert!(!persist_snapshot(&repository, &PlayerSnapshot::default(), "invalid").unwrap());
+        assert_eq!(repository.load_state("invalid").unwrap(), None);
+    }
+
+    #[test]
+    fn persist_snapshot_propagates_repository_errors() {
+        let snapshot = PlayerSnapshot { status: PlayerStatus::Playing, position_ms: 10,
+            duration_ms: Some(100), error: None };
+        assert_eq!(persist_snapshot(&FailingRepository, &snapshot, "film"),
+            Err("disk unavailable".into()));
     }
 }
