@@ -607,6 +607,7 @@ impl PlayerScreen {
     /// too) sees the same answer the frame draws.
     pub fn hud_up(&self, ps: &plx_media::route::PlaybackSession, now: u32) -> bool {
         self.hud.visible(ps, now, self.model.paused)
+            && !self.hud.sections.contains(Section::Info)
             && self.hud_policy != HudPolicy::Hidden
     }
 

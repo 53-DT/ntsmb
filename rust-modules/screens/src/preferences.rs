@@ -527,7 +527,6 @@ impl PreferencesPage {
         self.rebuild(keep);
     }
     fn activate(&mut self, key: u32, fx: &mut Effects<'_, InnerHost>) {
-        if self.state.io.busy { return; }
         match form_activate(&self.form, key, fx) {
             Some(Action::Retry) => {
                 if let Some(update) = self.txn.retry.clone() { self.txn.start_account(&mut self.state.io, Some(update), fx); }
@@ -736,7 +735,7 @@ fn field_form(inputs: &FieldListInputs<'_>) -> Form<RowId, Action, SettingsPage>
         let mut section = FormSection::new(header).visible(fields.iter().any(|f| shown(*f, inputs)) || (inputs.kind == Kind::Playback && index == 1));
         for &field in fields.iter().filter(|f| shown(**f, inputs)) {
             let value = field_readout_with_marker(field, inputs.quality, inputs.direct_play, inputs.prefs, inputs.marker_prefs, inputs.local);
-            let mut row = Row::new(field.title()).value(&value).chevron(true).dim(inputs.busy);
+            let mut row = Row::new(field.title()).value(&value).chevron(true);
             // A status the table states itself: it has to stay visible beside the row.
             if field == PickerKind::AudioLanguage && inputs.prefs.is_some_and(|p| p.auto_select_audio == Some(false)) {
                 row = row.detail(msg::settings_audio_selection_off());
@@ -748,7 +747,7 @@ fn field_form(inputs: &FieldListInputs<'_>) -> Form<RowId, Action, SettingsPage>
         // The Player HUD page closes the Player group.
         if inputs.kind == Kind::Playback && index == 1 {
             section = section.item(RowId::PlayerHud, RowKind::Nav(SettingsPage::PlayerHud), Action::Open,
-                Row::new(msg::settings_hud_title()).chevron(true).dim(inputs.busy))
+                Row::new(msg::settings_hud_title()).chevron(true))
                 .disabled(inputs.read_only);
         }
         form = form.section(section);
