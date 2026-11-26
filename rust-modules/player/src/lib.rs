@@ -118,7 +118,10 @@ impl PlayerController {
     }
 
     pub fn report_finished(&mut self) {
-        if self.source.is_none() || self.snapshot.status == PlayerStatus::Empty { return; }
+        if self.source.is_none() || !matches!(
+            self.snapshot.status,
+            PlayerStatus::Ready | PlayerStatus::Playing | PlayerStatus::Paused
+        ) { return; }
         self.snapshot.status = PlayerStatus::Stopped;
         if let Some(duration) = self.snapshot.duration_ms {
             self.snapshot.position_ms = duration;
@@ -126,7 +129,10 @@ impl PlayerController {
     }
 
     pub fn report_error(&mut self, message: impl Into<String>) {
-        if self.source.is_none() || self.snapshot.status == PlayerStatus::Empty { return; }
+        if self.source.is_none() || !matches!(
+            self.snapshot.status,
+            PlayerStatus::Ready | PlayerStatus::Playing | PlayerStatus::Paused
+        ) { return; }
         self.snapshot.status = PlayerStatus::Failed;
         self.snapshot.error = Some(message.into());
     }
@@ -225,14 +231,19 @@ mod tests {
         assert_eq!(stopped.stop(), Some(PlayerCommand::Stop));
         stopped.report_position(9_000, Some(10_000));
         stopped.report_playing();
+        stopped.report_finished();
+        stopped.report_error("late stop teardown error");
         assert_eq!(stopped.snapshot().status, PlayerStatus::Stopped);
         assert_eq!(stopped.snapshot().position_ms, 0);
+        assert_eq!(stopped.snapshot().error, None);
 
         let mut failed = PlayerController::new();
         failed.load(source());
         failed.report_error("decoder failed");
         failed.report_position(7_000, Some(10_000));
         failed.report_playing();
+        failed.report_finished();
+        failed.report_error("late replacement error");
         assert_eq!(failed.snapshot().status, PlayerStatus::Failed);
         assert_eq!(failed.snapshot().position_ms, 0);
         assert_eq!(failed.snapshot().error.as_deref(), Some("decoder failed"));
