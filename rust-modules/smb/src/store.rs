@@ -134,6 +134,23 @@ impl SavedStore {
         serde_json::to_string(&file).map_err(|_| "Could not encode saved SMB connections".to_string())
     }
 
+    /// Prefer the standalone SMB store; import the legacy FinNative session payload only
+    /// when no standalone file exists. The imported data is written to the standalone store
+    /// on the next save, allowing the app to leave the FinNative session persistence path.
+    pub fn open_with_legacy_session(
+        candidates: Vec<PathBuf>,
+        runtime_dir: Option<PathBuf>,
+        encoded: Option<&str>,
+    ) -> Self {
+        if candidates.iter().any(|path| path.exists()) {
+            return Self::open_with_runtime(candidates, runtime_dir);
+        }
+        let mut store = Self::open_session(encoded);
+        store.candidates = candidates;
+        store.runtime_dir = runtime_dir;
+        store
+    }
+
     /// Load from the first candidate that holds a valid file. A missing file is an empty store.
     /// A file that exists but cannot be understood is moved aside (`.corrupt`) rather than
     /// silently overwritten, and the store starts empty.
