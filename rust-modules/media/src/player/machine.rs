@@ -130,11 +130,11 @@ impl Default for Player {
 
 /// Logical repair authority; resource handles live in PlayerAdapter. No reset-on-playback API.
 pub struct RepairAttempt {
-    state: plx_os::tv::native_video::State,
+    state: ntsmb_core::NativeVideoRepairState,
 }
 impl RepairAttempt {
-    pub const fn new() -> Self { Self { state: plx_os::tv::native_video::State::Idle } }
-    pub fn state(&self) -> plx_os::tv::native_video::State { self.state }
+    pub const fn new() -> Self { Self { state: ntsmb_core::NativeVideoRepairState::Idle } }
+    pub fn state(&self) -> ntsmb_core::NativeVideoRepairState { self.state }
     pub fn begin(&mut self, supported: bool) -> Option<u64> {
         use plx_os::tv::native_video::{State, Failure};
         if self.state != State::Idle { return None; }
@@ -143,8 +143,8 @@ impl RepairAttempt {
         Some(1)
     }
     /// The single issued token can land only once. Wrong/duplicate completions cannot rewrite it.
-    pub fn complete(&mut self, token: u64, result: Result<(), plx_os::tv::native_video::Failure>) -> bool {
-        use plx_os::tv::native_video::State;
+    pub fn complete(&mut self, token: u64, result: Result<(), ntsmb_core::NativeVideoRepairFailure>) -> bool {
+        use ntsmb_core::NativeVideoRepairState;
         if token != 1 || self.state != State::Running { return false; }
         self.state = match result { Ok(()) => State::Repaired, Err(e) => State::Failed(e) };
         true
@@ -154,7 +154,7 @@ impl RepairAttempt {
 #[cfg(test)]
 mod repair_tests {
     use super::*;
-    use plx_os::tv::native_video::Failure;
+    use ntsmb_core::NativeVideoRepairFailure;
     // `repair_survives_screen_and_session_recreation_and_rejects_stale_completions` builds a
     // `PlayerScreen`, which `player` may not name: it lives in `screens::player`'s
     // `repair_confirmation_tests`, beside the screen it recreates.
