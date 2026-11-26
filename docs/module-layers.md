@@ -46,6 +46,16 @@ its own and then removed them, so it is empty again and only shrinks. Run
 table's figures are the baseline, before L1; the target-graph table is measured after L14, so it
 does not count `tv` or `port`.
 
+## NTSMB neutral domain layers
+
+The NTSMB fork adds three independent crates above the inherited engine stack:
+
+- `core` (`ntsmb_core`) owns backend-neutral media, profile, playback-state and platform-repair contracts.
+- `library` (`ntsmb_library`) owns folder-list presentation state, filtering, selection and typed navigation intents. It depends only on `core`.
+- `player` (`ntsmb_player`) owns backend-neutral playback-session state and transport intents. It depends only on `core`; it does not load codecs, open SMB resources, render controls or invoke platform repair itself.
+
+The application facade exposes the two domain services as `library` and `player`. The existing native engine and webOS repair implementation remain behind the application's adapter boundary during this migration; this extraction does not replace the proven SMB Range bridge, decoder, subtitle pipeline or rooted-TV repair path.
+
 ## Why this exists
 
 rustc compiles and caches per **crate**. `plxnative-modules` is one 441k-line crate. Any edit
