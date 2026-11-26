@@ -311,14 +311,27 @@ impl SmbConnectScreen {
         let r = Self::rect(field, measure)?;
         Some(if Self::field(field) { plx_ui::text_field::plate(r) } else { r })
     }
+    fn select_library_row(&mut self, index: usize) -> ntsmb_library::LibraryIntent {
+        let Some(row) = self.rows.get(index) else {
+            return ntsmb_library::LibraryIntent::None;
+        };
+        let source_id = self.saved_id.clone()
+            .or_else(|| self.controller.share().map(str::to_owned))
+            .unwrap_or_else(|| "smb".to_owned());
+        let Ok(path) = plx_smb::browser::child_path(&self.controller.folder().to_owned(), &row.entry.name) else {
+            return ntsmb_library::LibraryIntent::None;
+        };
+        let media_id = format!("{source_id}:{path}");
+        if !self.library_state.select_media_id(&media_id) {
+            return ntsmb_library::LibraryIntent::None;
+        }
+        self.library_state.activate_selected()
+    }
+
     fn activate_browser_index(&mut self, index: usize) {
         if index >= self.rows.len() { return; }
-        let current_core_selection = self.library_state.selected();
-        self.library_state.move_selection(index as isize - current_core_selection as isize);
-        let is_video = matches!(
-            self.library_state.activate_selected(),
-            ntsmb_library::LibraryIntent::PlayMedia { .. }
-        );
+        let intent = self.select_library_row(index);
+        let is_video = matches!(intent, ntsmb_library::LibraryIntent::PlayMedia { .. });
         if is_video {
             let request = self.controller.request().cloned();
             let share = self.controller.share().map(str::to_owned);
@@ -571,7 +584,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
      self.saved_selection=Some(to.elem as usize);
     }
     if self.exit_armed { self.exit_armed=false; }
-    if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);let core_delta=next as isize-self.library_state.selected() as isize;self.library_state.move_selection(core_delta);self.selected=next;}
+    if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);let _=self.select_library_row(next);self.selected=next;}
     Handled::Yes
    }
    ScreenEvent::WillLeave(_)|ScreenEvent::Cover|ScreenEvent::Suspend|ScreenEvent::Unmount=>{self.set_editing(None,fx);Handled::No}
