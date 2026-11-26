@@ -9,6 +9,7 @@
 members = [
     "core",
     "library",
+    "player",
     "base",
     "playback-contract",
     "machine",
@@ -239,6 +240,7 @@ workspace = true
 
 [dependencies]
 ntsmb_library = { path = "library" }
+ntsmb_player = { path = "player" }
 # The base layer (ci/module-layers.ini `[base]`): event log, paths, spawn discipline, dlopen seam,
 # frame instruments. Features it has a `cfg` on are forwarded by the features above.
 plx_base = { path = "base" }
