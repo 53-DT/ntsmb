@@ -818,6 +818,47 @@ fn publish_product_frame(app: &mut App, was_player: bool) {
     publish_player_model(app);
 }
 
+/// The control-row slot is separate from HudModel: both visibility and focus must receive
+/// the SMB queue neighbours, not just the model consumed by the renderer.
+fn frame_control_slot(
+    smb_local: bool,
+    default: plx_appkit::player_hud::ControlSlot,
+    previous: bool,
+    next: bool,
+) -> plx_appkit::player_hud::ControlSlot {
+    if smb_local {
+        plx_appkit::player_hud::ControlSlot::Discs(
+            plx_appkit::player_hud::Controls::for_item(true, previous, next),
+        )
+    } else {
+        default
+    }
+}
+
+#[cfg(test)]
+mod smb_control_slot_tests {
+    use super::*;
+
+    #[test]
+    fn smb_queue_neighbours_reach_the_visible_control_slot() {
+        let none = plx_appkit::player_hud::ControlSlot::Discs(plx_appkit::player_hud::Controls::NONE);
+        let both = frame_control_slot(true, none, true, true);
+        let plx_appkit::player_hud::ControlSlot::Discs(controls) = both else {
+            panic!("SMB playback must use the ordinary control discs");
+        };
+        assert!(controls.previous && controls.next);
+
+        let next_only = frame_control_slot(true, none, false, true);
+        let plx_appkit::player_hud::ControlSlot::Discs(controls) = next_only else {
+            panic!("SMB playback must use the ordinary control discs");
+        };
+        assert!(!controls.previous && controls.next);
+
+        assert_eq!(frame_control_slot(false, none, true, true), none,
+            "non-SMB playback retains its existing queue-derived slot");
+    }
+}
+
 /// Frame-boundary runner inputs, captured before the event pump.
 fn begin_product_frame(app: &mut App) -> Frame {
     if app.runtime.bridge(&mut app.bridge).publish_marker_preferences(clock::now()) {
@@ -831,14 +872,12 @@ fn begin_product_frame(app: &mut App) -> Frame {
     // SMB playback has its own folder queue rather than a Plex episode queue. The HUD model
     // already publishes these neighbours, but the focus/visibility slot is a separate publication:
     // feed the same facts into it so Previous and Next are actually drawn and focusable.
-    if smb_local {
-        let controls = plx_appkit::player_hud::Controls::for_item(
-            true,
-            plx_smb::playback::has_autoplay_previous(),
-            plx_smb::playback::has_autoplay_next(),
-        );
-        frame.ctrl = plx_appkit::player_hud::ControlSlot::Discs(controls);
-    }
+    frame.ctrl = frame_control_slot(
+        smb_local,
+        frame.ctrl,
+        plx_smb::playback::has_autoplay_previous(),
+        plx_smb::playback::has_autoplay_next(),
+    );
     frame
 }
 
