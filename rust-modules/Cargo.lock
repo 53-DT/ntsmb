@@ -1380,6 +1380,7 @@ dependencies = [
  "dolby_vision",
  "encoding_rs",
  "libc",
+ "ntsmb_core",
  "plx_base",
  "plx_data",
  "plx_machine",
