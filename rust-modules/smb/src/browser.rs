@@ -261,6 +261,16 @@ mod tests {
 }
 
 
+/// Build a stable namespace for one SMB share without including credentials.
+///
+/// The connection key identifies host, port and account; the share component prevents
+/// equal relative paths in different shares from colliding. Length-prefixing keeps the
+/// encoding unambiguous even when names contain punctuation.
+pub fn media_source_id(profile: &crate::profile::ConnectionProfile, share: &str) -> String {
+    let connection = crate::store::connection_id(profile);
+    format!("{}:{}{}:{}", connection.len(), connection, share.len(), share)
+}
+
 /// Build the stable identity used by the neutral library for an SMB item.
 ///
 /// The source namespace prevents equal relative paths on different saved connections from
@@ -320,6 +330,19 @@ fn media_type_for_name(name: &str) -> ntsmb_core::MediaType {
 #[cfg(test)]
 mod core_contract_tests {
     use super::*;
+
+    #[test]
+    fn media_source_identity_separates_connections_and_shares() {
+        let profile_a = crate::profile::ConnectionProfile::new("nas-a", 445, "alice", false).unwrap();
+        let profile_b = crate::profile::ConnectionProfile::new("nas-b", 445, "alice", false).unwrap();
+        let other_user = crate::profile::ConnectionProfile::new("nas-a", 445, "bob", false).unwrap();
+
+        let movies = media_source_id(&profile_a, "Movies");
+        assert_eq!(movies, media_source_id(&profile_a, "Movies"));
+        assert_ne!(movies, media_source_id(&profile_a, "TV"));
+        assert_ne!(movies, media_source_id(&profile_b, "Movies"));
+        assert_ne!(movies, media_source_id(&other_user, "Movies"));
+    }
 
     #[test]
     fn media_identity_is_stable_and_namespaced_by_source() {
