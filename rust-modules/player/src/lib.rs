@@ -193,3 +193,7 @@ mod tests {
         assert!(player.source().is_none());
     }
 }
+
+
+/// Core-contract bridge for saved playback progress.
+pub mod progress;
