@@ -259,6 +259,21 @@ mod tests {
     }
 
     #[test]
+    fn refresh_keeps_focus_on_the_same_media_when_rows_are_inserted() {
+        let mut browser = LibraryBrowser::default();
+        browser.set_folder(folder("Films/Drama"));
+        browser.select_index(3);
+        assert_eq!(browser.selected_item().unwrap().name, "zeta.mkv");
+
+        let mut refreshed = folder("Films/Drama");
+        refreshed.items.push(item("Beta.mkv", "Films/Drama/Beta.mkv", false, MediaType::Video));
+        browser.set_folder(refreshed);
+
+        assert_eq!(browser.selected_item().unwrap().name, "zeta.mkv");
+        assert_eq!(browser.selected(), 4, "the focused item moves with its identity, not its old row number");
+    }
+
+    #[test]
     fn sort_policy_is_deterministic_and_folders_stay_first() {
         let mut browser = LibraryBrowser::default();
         browser.set_folder(folder("Films/Drama"));
