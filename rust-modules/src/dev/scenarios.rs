@@ -1332,7 +1332,7 @@ fn smb_playback_arm(app: &mut App, fr: &mut Frame) -> bool {
             app.scenarios.smb_worker = None;
             let local_item = smb_playing_item(&prepared.probe);
             let subtitle_count = local_item.subs.len();
-            app.adapters.player.set_external_playback(prepared.play, prepared.bridge);
+            app.adapters.player.set_external_playback(prepared.play, Box::new(prepared.bridge));
             plx_media::route::clear_url(&mut app.player.session);
             let started = crate::app::playback::start_playback(
                 &mut app.player.session,
