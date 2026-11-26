@@ -63,12 +63,24 @@ impl LibraryBrowser {
     pub fn selected(&self) -> usize { self.selected }
 
     /// Replacing the listing for a different folder starts at its first visible item. Refreshing
-    /// the same folder preserves focus, clamped to the new result count.
+    /// the same folder preserves the focused media identity even if rows are inserted, removed or
+    /// reordered; if that item disappeared, the prior index is clamped to the new result count.
     pub fn set_folder(&mut self, folder: MediaFolder) {
         let changed_location = self.folder.as_ref().map_or(true, |old|
             old.source_id != folder.source_id || old.path != folder.path);
+        let focused_id = if changed_location {
+            None
+        } else {
+            self.selected_item().map(|item| item.id.clone())
+        };
         self.folder = Some(folder);
-        if changed_location { self.selected = 0; }
+        if changed_location {
+            self.selected = 0;
+        } else if let Some(focused_id) = focused_id {
+            if let Some(index) = self.visible_items().iter().position(|item| item.id == focused_id) {
+                self.selected = index;
+            }
+        }
         self.clamp_selection();
     }
 
