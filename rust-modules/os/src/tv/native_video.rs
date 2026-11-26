@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 
 /// What the boot-time probe found, cached for the process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Verdict {
+pub use ntsmb_core::NativeVideoVerdict as Verdict;\n\n/*\npub enum Verdict {
     /// The platform probed and the video path is there. On webOS: the SoC matched the affected
     /// family and `/dev/rtkmem` is readable.
     Available,
@@ -20,6 +20,7 @@ pub enum Verdict {
     /// the family it asks about. On webOS: the SoC did not match, so `/dev/rtkmem` was never probed.
     NotApplicable,
 }
+*/
 
 static VERDICT: OnceLock<Verdict> = OnceLock::new();
 
@@ -94,7 +95,7 @@ pub fn context() -> &'static str {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Failure {
+pub use ntsmb_core::NativeVideoRepairFailure as Failure;\n/*\npub enum Failure {
     StartFailed,
     HbcUnavailable,
     NotRoot,
@@ -105,13 +106,31 @@ pub enum Failure {
     Unreadable,
     Unsupported,
 }
+*/
+pub use ntsmb_core::NativeVideoRepairState as State;
 
+/*
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
     Idle,
     Running,
     Repaired,
     Failed(Failure),
+}
+*/
+
+/// The OS-layer implementation of the neutral player repair port. The platform hook remains
+/// installed by the selected platform crate; no privileged implementation enters core/player.
+pub struct InstalledRepairPort;
+
+impl ntsmb_core::NativeVideoRepairPort for InstalledRepairPort {
+    fn verdict(&self) -> ntsmb_core::NativeVideoVerdict {
+        verdict_of(&VERDICT)
+    }
+
+    fn repair(&self) -> Result<(), ntsmb_core::NativeVideoRepairFailure> {
+        repair()
+    }
 }
 
 /// Called only by the PlayerAdapter worker after the owner accepts explicit confirmation. A platform
