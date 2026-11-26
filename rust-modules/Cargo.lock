@@ -1551,6 +1551,7 @@ name = "plx_screens"
 version = "0.0.0"
 dependencies = [
  "libc",
+ "ntsmb_library",
  "plx_appkit",
  "plx_base",
  "plx_data",
