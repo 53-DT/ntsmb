@@ -340,6 +340,19 @@ impl SmbConnectScreen {
             CHANGE_SERVER => { self.controller.disconnect(); self.shares.clear(); self.rows.clear(); self.selected=0; self.connecting=false; self.save_pending=false; self.saved_id=None; self.saved_view=true; self.error=None; self.set_editing(None,fx); fx.invalidate(plx_machine::present::Provenance::Input); }
             e if self.saved_view && (e as usize)<self.saved.connections().len() => {
                 let index=(e-SAVED_BASE) as usize;
+                if self.remove_armed {
+                    if let Some(connection)=self.saved.connections().get(index) {
+                        let id=connection.id.clone();
+                        self.saved.remove(&id);
+                        self.saved_selection=if self.saved.connections().is_empty(){None}else{Some(index.min(self.saved.connections().len()-1))};
+                        self.saved_id=None;
+                        self.remove_armed=false;
+                        self.error=None;
+                        if let Err(error)=self.saved.save(){self.error=Some(error);}
+                        fx.invalidate(plx_machine::present::Provenance::Input);
+                    }
+                    return;
+                }
                 if let Some(saved)=self.saved.connections().get(index).cloned(){
                     self.host=TextBuffer::new(saved.profile.host.clone(),saved.profile.host.len());
                     self.port=TextBuffer::new(saved.profile.port.to_string(),saved.profile.port.to_string().len());
@@ -521,19 +534,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
    ScreenEvent::FocusMoved{to,..}=>{
     if self.editing.is_some_and(|e|e!=to.elem){self.set_editing(None,fx);}
     if self.saved_view && (to.elem as usize)<self.saved.connections().len() {
-     let index=to.elem as usize;
-     self.saved_selection=Some(index);
-     if self.remove_armed {
-      if let Some(connection)=self.saved.connections().get(index) {
-       let id=connection.id.clone();
-       self.saved.remove(&id);
-       self.saved_selection=if self.saved.connections().is_empty(){None}else{Some(index.min(self.saved.connections().len()-1))};
-       self.saved_id=None;
-       self.remove_armed=false;
-       self.error=None;
-       if let Err(error)=self.saved.save(){self.error=Some(error);}
-      }
-     }
+     self.saved_selection=Some(to.elem as usize);
     } else if to.elem!=REMOVE_CONNECTION && self.remove_armed {
      self.remove_armed=false;
      if self.error.as_deref()==Some("Choose the server you want to remove.") { self.error=None; }
