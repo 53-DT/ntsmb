@@ -22,6 +22,26 @@ when inherited server, login, consent, locale and branding files are removed.
 6. Success requires a full app restart before another native playback attempt because the boot-time
    verdict is intentionally immutable for the running process.
 
+## Neutral player-core boundary
+
+The extracted player must not import `plx_os` or the webOS platform crate to make its repair
+decision. The neutral contract now lives in `ntsmb_core`:
+
+- `NativeVideoVerdict`: `Available`, `Blocked(reason)`, or `NotApplicable`.
+- `NativeVideoRepairFailure`: stable failure categories, including timeout and unsupported.
+- `NativeVideoRepairState`: process-lifetime `Idle` / `Running` / `Repaired` / `Failed`.
+- `NativeVideoRepairPort`: the player-facing `verdict()` and `repair()` boundary.
+
+`plx_os::tv::native_video` re-exports those neutral types and provides
+`InstalledRepairPort`, which delegates to the selected platform's installed repair hook.
+The app composition injects that port into `PlayerAdapter`; the adapter spends the one-shot
+authority and runs the repair off the frame thread. The player core owns the decision and state,
+not the privileged command or its platform identity checks.
+
+Do not move the Homebrew Channel service call, jailer command, install-path validation, or
+`/dev/rtkmem` probing into `ntsmb_core`, `library/`, or a generic UI module. Those remain in
+the OS/platform boundary. This keeps NTSMB's player reusable without weakening the webOS repair.
+
 ## Code ownership — preserve these paths
 
 - `rust-modules/os/src/tv/native_video.rs`: platform-neutral verdict, failure/state types and
