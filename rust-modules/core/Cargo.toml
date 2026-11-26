@@ -6,6 +6,9 @@ license = "GPL-3.0-or-later"
 description = "Backend-neutral domain contracts for NTSMB."
 publish = false
 
+[package.metadata.plx]
+mount = "core"
+
 [lib]
 name = "ntsmb_core"
 crate-type = ["rlib"]
