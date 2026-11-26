@@ -51,7 +51,7 @@ does not count `tv` or `port`.
 The NTSMB fork adds three independent crates above the inherited engine stack:
 
 - `core` (`ntsmb_core`) owns backend-neutral media, profile, playback-state and platform-repair contracts.
-- `library` (`ntsmb_library`) owns folder-list presentation state, filtering, selection and typed navigation intents. It depends only on `core`.
+- `library` (`ntsmb_library`) owns folder-list presentation state, filtering, selection, typed navigation intents, playback-progress repository bridges and a byte-bounded LRU cache for opaque thumbnail data. It depends only on `core`; fetching, decoding and drawing thumbnails remain adapter responsibilities.
 - `player` (`ntsmb_player`) owns backend-neutral playback-session state and transport intents. It depends only on `core`; it does not load codecs, open SMB resources, render controls or invoke platform repair itself.
 
 The application facade exposes the two domain services as `library` and `player`. The existing native engine and webOS repair implementation remain behind the application's adapter boundary during this migration; this extraction does not replace the proven SMB Range bridge, decoder, subtitle pipeline or rooted-TV repair path.
