@@ -1,0 +1,20 @@
+[package]
+name = "ntsmb_player"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Backend-neutral playback session and control policy for NTSMB."
+publish = false
+
+[lib]
+name = "ntsmb_player"
+crate-type = ["rlib"]
+
+[package.metadata.plx]
+mount = "player"
+
+[dependencies]
+ntsmb_core = { path = "../core" }
+
+[lints]
+workspace = true
