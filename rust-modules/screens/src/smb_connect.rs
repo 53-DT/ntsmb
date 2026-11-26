@@ -59,6 +59,8 @@ pub struct SmbConnectScreen {
     password: TextBuffer,
     editing: Option<u32>,
     pub controller: BrowseController,
+    /// Backend-neutral library view model; the SMB controller remains the IO/effect adapter.
+    library_state: ntsmb_library::LibraryBrowser,
     pub shares: Vec<plx_smb::ShareInfo>,
     pub rows: Vec<plx_smb::browser::BrowserEntry>,
     pub selected: usize,
@@ -146,7 +148,7 @@ impl SmbConnectScreen {
             port: TextBuffer::new(form.port.clone(), form.port.len()),
             user: TextBuffer::new(String::new(), 0),
             password: TextBuffer::new(String::new(), 0),
-            form, controller: BrowseController::new(),
+            form, controller: BrowseController::new(), library_state: ntsmb_library::LibraryBrowser::default(),
             shares: Vec::new(), rows: Vec::new(), selected: 0, error: None, connecting: false, editing: None, playback: None,
             saved, save_pending: false, saved_id: None, last_saved_path: String::new(),
             saved_view, storage_warning, exit_armed: false, saved_selection, remove_armed: false, resume_path: None,
@@ -225,6 +227,7 @@ impl SmbConnectScreen {
         self.shares = self.controller.shares().to_vec();
         self.rows = self.controller.browser().entries().to_vec();
         self.selected = self.controller.browser().selected();
+        self.sync_library_state();
         self.connecting = matches!(self.controller.phase(), Phase::Connecting | Phase::OpeningShare) || self.controller.browser().is_loading();
         if let Some(message) = self.controller.message() { self.error = Some(message.to_owned()); }
         if let Some(error) = self.controller.browser().error() { self.error = Some(error.to_owned()); }
@@ -258,6 +261,20 @@ impl SmbConnectScreen {
         }
         Ok(())
     }
+    fn sync_library_state(&mut self) {
+        let source_id = self.saved_id.clone()
+            .or_else(|| self.controller.share().map(str::to_owned))
+            .unwrap_or_else(|| "smb".to_owned());
+        let path = self.controller.folder().to_owned();
+        let entries = self.rows.iter().map(|row| row.entry.clone());
+        if let Ok(folder) = plx_smb::browser::to_core_folder(&source_id, &path, entries) {
+            self.library_state.set_folder(folder);
+            let target = self.controller.browser().selected();
+            let current = self.library_state.selected();
+            self.library_state.move_selection(target as isize - current as isize);
+        }
+    }
+
     fn rect(field: u32, measure: &dyn plx_machine::machine::Measure) -> Option<Rect> {
         let layout = RouteLayout::screen();
         let width = layout.content.w.min(FIELD_W);
@@ -295,7 +312,13 @@ impl SmbConnectScreen {
     }
     fn activate_browser_index(&mut self, index: usize) {
         if index >= self.rows.len() { return; }
-        if self.rows[index].is_video {
+        let current_core_selection = self.library_state.selected();
+        self.library_state.move_selection(index as isize - current_core_selection as isize);
+        let is_video = matches!(
+            self.library_state.activate_selected(),
+            ntsmb_library::LibraryIntent::PlayMedia { .. }
+        );
+        if is_video {
             let request = self.controller.request().cloned();
             let share = self.controller.share().map(str::to_owned);
             let folder = self.controller.folder().to_owned();
@@ -547,7 +570,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
      self.saved_selection=Some(to.elem as usize);
     }
     if self.exit_armed { self.exit_armed=false; }
-    if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);self.selected=next;}
+    if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);let core_delta=next as isize-self.library_state.selected() as isize;self.library_state.move_selection(core_delta);self.selected=next;}
     Handled::Yes
    }
    ScreenEvent::WillLeave(_)|ScreenEvent::Cover|ScreenEvent::Suspend|ScreenEvent::Unmount=>{self.set_editing(None,fx);Handled::No}
