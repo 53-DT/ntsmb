@@ -2457,6 +2457,29 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
                         plx_media::player::error_now(&app.player.session).kind)));
             app.adapters.player.sync_request_metrics(&mut app.player.session);
         }
+        // Publish the real engine clock and terminal state into the neutral SMB player session.
+        // This is deliberately after pump/poll/report: the native route remains authoritative,
+        // while library/progress consumers receive a coherent per-frame snapshot.
+        if app.adapters.player.has_external_playback() {
+            let position_ms = plx_media::player::observed_position_ns(&app.player.session)
+                .map(|value| (value.max(0) as u64) / 1_000_000);
+            let duration_ms = plx_media::player::observed_duration_ns(&app.player.session)
+                .map(|value| (value.max(0) as u64) / 1_000_000);
+            if let Some(position_ms) = position_ms {
+                app.adapters.player.report_external_position(position_ms, duration_ms);
+            }
+            if plx_media::player::ended(&app.player.session) == Some(true) {
+                app.adapters.player.report_external_finished();
+            } else if plx_media::player::state(&app.player.session)
+                == plx_media::player::PlaybackState::Error {
+                let failure = plx_media::player::error_now(&app.player.session);
+                app.adapters.player.report_external_error(format!("{:?}", failure.kind));
+            } else if app.adapters.player.backend_viewer_paused() == Some(true) {
+                app.adapters.player.report_external_paused();
+            } else if plx_media::player::is_playing(&app.player.session) {
+                app.adapters.player.report_external_playing();
+            }
+        }
         // end-of-stream: the pipeline drained at the credits → hand off to Up Next when the
         // show has another episode queued and the Next episode preference is not Off, else leave
         // the player (back to the detail page or home, whichever is behind), instead of freezing
