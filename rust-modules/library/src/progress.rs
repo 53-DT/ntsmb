@@ -102,6 +102,33 @@ mod tests {
             "a failed restore must not partially alter the browser");
     }
 
+
+    #[derive(Default)]
+    struct FailingWrites;
+
+    impl PlaybackStateRepository for FailingWrites {
+        fn load_state(&self, _: &str) -> Result<Option<PlaybackState>, String> { Ok(None) }
+        fn save_state(&self, _: &PlaybackState) -> Result<(), String> { Err("disk full".into()) }
+        fn delete_state(&self, _: &str) -> Result<(), String> { Err("read only".into()) }
+    }
+
+    #[test]
+    fn failed_persist_and_delete_leave_the_library_snapshot_unchanged() {
+        let mut browser = LibraryBrowser::default();
+        browser.set_progress(state("film", 420));
+        let before = browser.progress_for("film").cloned();
+
+        assert_eq!(persist_progress(&browser, &FailingWrites, "film"),
+            Err("disk full".into()));
+        assert_eq!(browser.progress_for("film"), before.as_ref(),
+            "a failed save must not mutate the in-memory snapshot");
+
+        assert_eq!(delete_progress(&mut browser, &FailingWrites, "film"),
+            Err("read only".into()));
+        assert_eq!(browser.progress_for("film"), before.as_ref(),
+            "a failed delete must retain the in-memory state so it can be retried");
+    }
+
     #[test]
     fn restore_save_and_delete_use_only_the_core_repository_contract() {
         let repository = MemoryProgress::default();
