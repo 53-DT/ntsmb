@@ -116,20 +116,27 @@ impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
 impl SmbConnectScreen {
     pub fn new(entry: EntryId) -> Self {
         let form = ConnectForm::new();
-        // Use the HUD store's device-tested order: persistent locations first and
-        // the app's /tmp runtime directory last. That final fallback survives closing and
-        // reopening the app; SavedStore marks it as temporary so the UI warns about TV reboots.
-        // Use the platform's dedicated persistent state root first, then retain the HUD-derived
-        // fallbacks for installs whose state-root directory is not writable. Runtime storage is last.
-        let mut saved_paths = vec![plx_base::paths::persistent_state_root().join("ntsmb-connections.json")];
-        saved_paths.extend(plx_base::paths::hud_candidates().into_iter().filter(|path| path.parent() != Some(plx_base::paths::runtime_dir())).map(|path| {
-            let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("huds");
-            let prefix = file_name.strip_suffix("huds").unwrap_or("");
-            path.with_file_name(format!("{prefix}ntsmb-connections.json"))
-        }));
-        saved_paths.push(plx_base::paths::runtime_dir().join("ntsmb-connections.json"));
-        saved_paths.dedup();
-        let saved = plx_smb::store::SavedStore::open_with_runtime(saved_paths, Some(plx_base::paths::runtime_dir().to_path_buf()));
+        // SMB profiles share FinNative's persisted session record.
+        let saved_payload = plx_plex::plex::session::peek().extensions.0
+            .get("ntsmb_connections").and_then(serde_json::Value::as_str);
+        // One-time migration from the standalone connection file used by older builds.
+        let saved = if let Some(payload) = saved_payload {
+            plx_smb::store::SavedStore::open_session(Some(payload))
+        } else {
+            let mut legacy_paths = vec![plx_base::paths::persistent_state_root().join("ntsmb-connections.json")];
+            legacy_paths.extend(plx_base::paths::hud_candidates().into_iter()
+                .filter(|path| path.parent() != Some(plx_base::paths::runtime_dir()))
+                .map(|path| {
+                    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("huds");
+                    let prefix = file_name.strip_suffix("huds").unwrap_or("");
+                    path.with_file_name(format!("{prefix}ntsmb-connections.json"))
+                }));
+            legacy_paths.push(plx_base::paths::runtime_dir().join("ntsmb-connections.json"));
+            legacy_paths.dedup();
+            plx_smb::store::SavedStore::open_with_runtime(
+                legacy_paths, Some(plx_base::paths::runtime_dir().to_path_buf())
+            )
+        };
         let saved_view = true;
         let storage_warning = saved.saved_temporarily().then(|| "Connection details are stored in temporary TV storage and may be lost after a TV restart.".into());
         let saved_selection = (!saved.connections().is_empty()).then_some(0);
@@ -146,6 +153,19 @@ impl SmbConnectScreen {
             saved_row: AvatarRow::new(),
         }
     }
+
+    fn persist_saved(&self) -> Result<(), String> {
+        let encoded = self.saved.encode_session()?;
+        let written = plx_plex::plex::session::update(|current| {
+            let mut next = current.clone();
+            next.extensions.0.insert("ntsmb_connections".to_owned(), serde_json::Value::String(encoded));
+            Some(next)
+        });
+        if written { Ok(()) } else {
+            Err("Could not save SMB connections in the FinNative session. Sign in first and try again.".into())
+        }
+    }
+
     fn saved_row_geom(n: usize) -> (f32, f32) {
         let sty = AvatarRow::STYLE;
         let slot = sty.w + sty.gap;
@@ -209,31 +229,16 @@ impl SmbConnectScreen {
         if let Some(error) = self.controller.browser().error() { self.error = Some(error.to_owned()); }
         if self.save_pending && matches!(self.controller.phase(), Phase::PickShare | Phase::Browsing) {
             self.save_pending = false;
-            let mut password_not_saved = false;
             let result = self.form.validate().and_then(|request| {
-                // Read the form's password before moving its ConnectionProfile.
+                // SMB credentials live inside the protected FinNative session auth payload.
                 let secret = request.password().to_owned();
-                let mut profile = request.profile;
-                if !profile.guest && !secret.is_empty() && profile.protect_password(&secret).is_err() {
-                    // Never fall back to writing a plaintext password into the app data file.
-                    password_not_saved = true;
-                }
-                self.saved.upsert(profile)
+                self.saved.upsert_with_password(request.profile, (!secret.is_empty()).then_some(secret))
             });
             match result {
                 Ok(id) => {
                     self.saved_id = Some(id); self.saved_view = false;
-                    if let Err(error) = self.saved.save() { self.error = Some(error); }
-                    else {
-                        let mut warnings = Vec::new();
-                        if self.saved.saved_temporarily() {
-                            warnings.push("Connection details are stored in temporary TV storage and may be lost after a TV restart.");
-                        }
-                        if password_not_saved {
-                            warnings.push("The TV did not grant access to its secure key store. The connection is saved, but its password is not; enter it again when reconnecting.");
-                        }
-                        self.storage_warning = if warnings.is_empty() { None } else { Some(warnings.join(" ")) };
-                    }
+                    if let Err(error) = self.persist_saved() { self.error = Some(error); }
+                    else { self.storage_warning = None; }
                 }
                 Err(error) => self.error = Some(format!("Connected, but could not save this server: {error}")),
             }
@@ -243,11 +248,11 @@ impl SmbConnectScreen {
             if path != self.last_saved_path {
                 self.saved.set_last_path(&id, &path);
                 self.last_saved_path = path;
-                if let Err(error) = self.saved.save() { self.error = Some(error); }
+                if let Err(error) = self.persist_saved() { self.error = Some(error); }
             }
             if let Some(share) = self.controller.share() {
                 let changed = self.saved.get(&id).is_some_and(|entry| entry.profile.share.as_deref() != Some(share));
-                if changed { self.saved.set_share(&id, Some(share)); if let Err(error) = self.saved.save() { self.error = Some(error); } }
+                if changed { self.saved.set_share(&id, Some(share)); if let Err(error) = self.persist_saved() { self.error = Some(error); } }
             }
         }
         Ok(())
@@ -352,7 +357,7 @@ impl SmbConnectScreen {
                         self.saved_id=None;
                         self.remove_armed=false;
                         self.error=None;
-                        if let Err(error)=self.saved.save(){self.error=Some(error);}
+                        if let Err(error)=self.persist_saved(){self.error=Some(error);}
                         fx.invalidate(plx_machine::present::Provenance::Input);
                     }
                     return;
@@ -361,13 +366,13 @@ impl SmbConnectScreen {
                     self.host=TextBuffer::new(saved.profile.host.clone(),saved.profile.host.len());
                     self.port=TextBuffer::new(saved.profile.port.to_string(),saved.profile.port.to_string().len());
                     self.user=TextBuffer::new(saved.profile.username.clone(),saved.profile.username.len());
-                    let password=saved.profile.reveal_password().unwrap_or_default();
+                    let password=saved.password.clone().or_else(|| saved.profile.reveal_password()).unwrap_or_default();
                     self.password=TextBuffer::new(password.clone(),password.len());
                     self.form.host=saved.profile.host.clone(); self.form.port=saved.profile.port.to_string();
                     self.form.username=saved.profile.username.clone(); self.form.password=password;
                     self.form.guest=saved.profile.guest; self.form.share=saved.profile.share.clone();
                     self.form.save_connection=true; self.saved_id=Some(saved.id.clone());
-                    self.saved.mark_used(&saved.id); let _=self.saved.save();
+                    self.saved.mark_used(&saved.id); let _=self.persist_saved();
                     self.resume_path=Some(saved.last_path.clone());
                     self.saved_view=false;
                     if !saved.profile.guest && self.form.password.is_empty(){self.error=Some("Enter the password for this saved server".into());self.set_editing(Some(PASSWORD),fx);}

@@ -76,7 +76,64 @@ pub struct SavedStore {
     runtime_dir: Option<PathBuf>,
 }
 
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SessionSavedConnection {
+    id: String,
+    name: String,
+    profile: ConnectionProfile,
+    #[serde(default)]
+    password: Option<String>,
+    #[serde(default)]
+    last_path: String,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SessionSavedFile {
+    schema: u32,
+    #[serde(default)]
+    last_used: Option<String>,
+    #[serde(default)]
+    connections: Vec<SessionSavedConnection>,
+}
+
 impl SavedStore {
+
+    /// Load SMB profiles from the protected FinNative session payload.
+    pub fn open_session(encoded: Option<&str>) -> Self {
+        let mut data = SavedFile::empty();
+        if let Some(encoded) = encoded {
+            if let Ok(file) = serde_json::from_str::<SessionSavedFile>(encoded) {
+                if file.schema == STORE_SCHEMA {
+                    data.connections = file.connections.into_iter()
+                        .filter(|entry| entry.profile.validate().is_ok())
+                        .take(MAX_SAVED)
+                        .map(|entry| SavedConnection {
+                            id: entry.id, name: entry.name, profile: entry.profile,
+                            password: entry.password, last_path: entry.last_path,
+                        }).collect();
+                    data.last_used = file.last_used.filter(|id|
+                        data.connections.iter().any(|entry| &entry.id == id));
+                }
+            }
+        }
+        Self { candidates: Vec::new(), data, temporary: AtomicBool::new(false), runtime_dir: None }
+    }
+
+    /// Encode the connection list for the protected FinNative session extension.
+    pub fn encode_session(&self) -> Result<String, String> {
+        let file = SessionSavedFile {
+            schema: STORE_SCHEMA,
+            last_used: self.data.last_used.clone(),
+            connections: self.data.connections.iter().map(|entry| SessionSavedConnection {
+                id: entry.id.clone(), name: entry.name.clone(), profile: entry.profile.clone(),
+                password: entry.password.clone(), last_path: entry.last_path.clone(),
+            }).collect(),
+        };
+        serde_json::to_string(&file).map_err(|_| "Could not encode saved SMB connections".to_string())
+    }
+
     /// Load from the first candidate that holds a valid file. A missing file is an empty store.
     /// A file that exists but cannot be understood is moved aside (`.corrupt`) rather than
     /// silently overwritten, and the store starts empty.
@@ -166,14 +223,14 @@ impl SavedStore {
             // Keep the person's folder if they re-save the same server from the form.
             let keep_path = if existing.profile.share == profile.share { existing.last_path.clone() } else { String::new() };
             existing.profile = profile;
-            existing.password = None;
+            if let Some(password) = _password { existing.password = Some(password); }
             existing.last_path = keep_path;
         } else {
             if self.data.connections.len() >= MAX_SAVED {
                 return Err("Too many saved servers. Remove one first.".into());
             }
             let name = profile.host.clone();
-            self.data.connections.push(SavedConnection { id: id.clone(), name, profile, password: None, last_path: String::new() });
+            self.data.connections.push(SavedConnection { id: id.clone(), name, profile, password: _password, last_path: String::new() });
         }
         self.data.last_used = Some(id.clone());
         Ok(id)
