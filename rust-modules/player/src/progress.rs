@@ -7,7 +7,8 @@ impl PlayerSnapshot {
     /// A stopped session is marked complete only when its final position reached its duration.
     pub fn to_playback_state(&self, media_id: impl Into<String>) -> Option<PlaybackState> {
         let duration_ms = self.duration_ms?;
-        if self.status == PlayerStatus::Empty || self.status == PlayerStatus::Ready {
+        // A zero-length duration is a probe/readout placeholder, not a meaningful resume record.
+        if duration_ms == 0 || self.status == PlayerStatus::Empty || self.status == PlayerStatus::Ready {
             return None;
         }
         let position_ms = self.position_ms.min(duration_ms);
@@ -53,5 +54,9 @@ mod tests {
         let ready = PlayerSnapshot { status: PlayerStatus::Ready, position_ms: 0,
             duration_ms: Some(100), error: None };
         assert!(ready.to_playback_state("movie").is_none());
+        let zero_duration = PlayerSnapshot { status: PlayerStatus::Playing, position_ms: 5,
+            duration_ms: Some(0), error: None };
+        assert!(zero_duration.to_playback_state("movie").is_none(),
+            "a zero duration is not a valid resume point");
     }
 }
