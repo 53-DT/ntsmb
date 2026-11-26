@@ -491,7 +491,7 @@ pub struct PlayerAdapter {
     /// One-shot app-supplied URL declaration (SMB/local browser); route URL takes over after resolve.
     external_play_url: std::sync::Mutex<Option<plx_playback_contract::playurl::PlayUrl>>,
     /// Loopback SMB transport kept alive for the current direct-file playback.
-    range_server: Option<plx_smb::range_http::RangeServer>,
+    playback_lease: Option<Box<dyn ntsmb_core::PlaybackLease>>,
     /// The test fixtures' handle on the Feed set boxed behind `physical`
     /// ([`Self::new_probed`]); `None` on an adapter built by [`Self::new`].
     #[cfg(test)]
@@ -586,7 +586,7 @@ impl PlayerAdapter {
             sink: inert_sink,
             start_hooks: None,
             external_play_url: std::sync::Mutex::new(None),
-            range_server: None,
+            playback_lease: None,
             #[cfg(test)]
             probe: None,
             backend: backend::BackendRunner::new(),
@@ -1163,21 +1163,21 @@ impl PlayerAdapter {
     pub fn set_external_playback(
         &mut self,
         play: plx_playback_contract::playurl::PlayUrl,
-        range_server: plx_smb::range_http::RangeServer,
+        playback_lease: Box<dyn ntsmb_core::PlaybackLease>,
     ) {
         *self.external_play_url.get_mut().unwrap_or_else(|p| p.into_inner()) = Some(play);
-        self.range_server = Some(range_server);
+        self.playback_lease = Some(playback_lease);
     }
 
     /// Discard an app-supplied direct-file source when the player refuses to start it.
     /// True while a direct SMB source owns the range bridge for the current item.
     pub fn has_external_playback(&self) -> bool {
-        self.range_server.is_some()
+        self.playback_lease.is_some()
     }
 
     pub fn clear_external_playback(&mut self) {
         *self.external_play_url.get_mut().unwrap_or_else(|p| p.into_inner()) = None;
-        self.range_server.take();
+        self.playback_lease.take();
     }
 
     pub(super) fn play_url(&self) -> Option<Result<plx_playback_contract::playurl::PlayUrl, String>> {
@@ -1965,7 +1965,7 @@ impl PlayerAdapter {
         }
         if !for_reload {
             // RangeServer's Drop signals and detaches; it never joins on the frame thread.
-            self.range_server.take();
+            self.playback_lease.take();
         }
     }
 
