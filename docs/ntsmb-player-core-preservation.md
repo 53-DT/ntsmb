@@ -29,6 +29,9 @@ when inherited server, login, consent, locale and branding files are removed.
 - `rust-modules/platform-webos/src/webos.rs`: affected-device probe and verdict publication.
 - `rust-modules/platform-webos/src/webos/jail_repair.rs`: validated Homebrew Channel repair
   implementation and fail-closed verification.
+- `rust-modules/platform-webos/src/port.rs`: registration of `jail_repair::execute` as the webOS
+  repair hook. Its current install identity must remain unchanged until the user explicitly supplies
+  the final bundle ID.
 - `rust-modules/os/src/tv.rs`: optional platform repair hook.
 - `rust-modules/media/src/player/machine.rs`: process-lifetime repair authority.
 - `rust-modules/media/src/player/adapter.rs`: off-frame repair worker and result polling.
