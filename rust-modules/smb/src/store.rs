@@ -77,7 +77,7 @@ pub struct SavedStore {
 }
 
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct SessionSavedConnection {
     id: String,
@@ -88,7 +88,7 @@ struct SessionSavedConnection {
     #[serde(default)]
     last_path: String,
 }
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct SessionSavedFile {
     schema: u32,
@@ -518,6 +518,18 @@ mod tests {
             iv: "opaque-iv".into(),
             data: "opaque-ciphertext".into(),
         });
+    }
+
+    #[test]
+    fn session_payload_round_trip_keeps_password_for_protected_session_storage() {
+        let mut saved = SavedStore::open(Vec::new());
+        let profile = ConnectionProfile::new("nas.local", 445, "alice", false).unwrap();
+        saved.upsert_with_password(profile, Some("private-test-password".to_owned())).unwrap();
+        let encoded = saved.encode_session().unwrap();
+        let restored = SavedStore::open_session(Some(&encoded));
+        let entry = restored.connections().first().unwrap();
+        assert_eq!(entry.password.as_deref(), Some("private-test-password"));
+        assert_eq!(entry.profile.host, "nas.local");
     }
 
     #[test]
