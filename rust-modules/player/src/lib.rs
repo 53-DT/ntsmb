@@ -215,6 +215,53 @@ mod tests {
     }
 
     #[test]
+    fn controller_commands_follow_valid_session_states_and_seek_is_clamped() {
+        let mut player = PlayerController::new();
+        assert_eq!(player.play(), None);
+        assert_eq!(player.pause(), None);
+        assert_eq!(player.seek_to(500), None);
+        assert_eq!(player.stop(), None);
+
+        assert_eq!(player.load(source()), PlayerCommand::Load(source()));
+        assert_eq!(player.play(), Some(PlayerCommand::Play));
+        assert_eq!(player.play(), None, "duplicate play intent while already playing is ignored");
+        assert_eq!(player.pause(), Some(PlayerCommand::Pause));
+        assert_eq!(player.pause(), None, "pause only applies while playing");
+
+        player.report_position(2_000, Some(1_000));
+        assert_eq!(player.snapshot().position_ms, 1_000);
+        assert_eq!(player.seek_to(4_000), Some(PlayerCommand::SeekTo { position_ms: 1_000 }));
+        assert_eq!(player.seek_to(300), Some(PlayerCommand::SeekTo { position_ms: 300 }));
+
+        assert_eq!(player.stop(), Some(PlayerCommand::Stop));
+        assert_eq!(player.play(), Some(PlayerCommand::Play), "stopped sessions may be resumed");
+        assert_eq!(player.pause(), Some(PlayerCommand::Pause));
+    }
+
+    #[test]
+    fn loading_new_source_resets_previous_terminal_state() {
+        let mut player = PlayerController::new();
+        player.load(source());
+        player.report_error("broken file");
+        assert_eq!(player.snapshot().status, PlayerStatus::Failed);
+
+        let next = PlaybackSource {
+            id: "next-item".into(),
+            uri: "http://127.0.0.1/next".into(),
+            name: "Next.mkv".into(),
+            size_bytes: None,
+            mime_type: None,
+        };
+        assert_eq!(player.load(next.clone()), PlayerCommand::Load(next));
+        assert_eq!(player.snapshot(), &PlayerSnapshot {
+            status: PlayerStatus::Ready,
+            position_ms: 0,
+            duration_ms: None,
+            error: None,
+        });
+    }
+
+    #[test]
     fn delayed_engine_reports_cannot_resurrect_stopped_or_failed_sessions() {
         let mut finished = PlayerController::new();
         finished.load(source());
