@@ -1431,6 +1431,7 @@ name = "plx_os"
 version = "0.0.0"
 dependencies = [
  "icu_calendar",
+ "ntsmb_core",
  "icu_datetime",
  "icu_decimal",
  "icu_locale",
