@@ -267,10 +267,20 @@ impl SmbConnectScreen {
             .unwrap_or_else(|| "smb".to_owned());
         let path = self.controller.folder().to_owned();
         let entries = self.rows.iter().map(|row| row.entry.clone());
+        // Capture the focused SMB entry by path before replacing the neutral listing. The
+        // library model can then restore that exact item after a refresh/reorder instead of
+        // inheriting a row number that may now point at a different movie.
+        let target = self.controller.browser().selected();
+        let focused_id = self.controller.browser().entries().get(target)
+            .and_then(|row| plx_smb::browser::child_path(&path, &row.entry.name).ok())
+            .map(|item_path| format!("{source_id}:{item_path}"));
         if let Ok(folder) = plx_smb::browser::to_core_folder(&source_id, &path, entries) {
             self.library_state.set_folder(folder);
-            let target = self.controller.browser().selected();
-            self.library_state.select_index(target);
+            let restored = focused_id.as_deref()
+                .is_some_and(|media_id| self.library_state.select_media_id(media_id));
+            if !restored {
+                self.library_state.select_index(target);
+            }
         } else {
             // Never leave a previous folder visible/selectable after an unsafe listing fails
             // neutral conversion (for example, a rejected traversal path).
