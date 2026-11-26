@@ -123,3 +123,43 @@ pub trait PlaybackStateRepository: Send + Sync {
     fn save_state(&self, state: &PlaybackState) -> Result<(), String>;
     fn delete_state(&self, media_id: &str) -> Result<(), String>;
 }
+
+
+/// Platform-neutral result of the boot-time native-video capability probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeVideoVerdict {
+    /// The platform probed and native video is available.
+    Available,
+    /// The platform probed and native video is blocked for this reason.
+    Blocked(&'static str),
+    /// The platform has no applicable native-video preflight.
+    NotApplicable,
+}
+
+/// Failure categories returned by an explicitly requested platform repair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeVideoRepairFailure {
+    StartFailed,
+    HbcUnavailable,
+    NotRoot,
+    CommandFailed,
+    Timeout,
+    Unreadable,
+    Unsupported,
+}
+
+/// Process-lifetime state of the one permitted native-video repair attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeVideoRepairState {
+    Idle,
+    Running,
+    Repaired,
+    Failed(NativeVideoRepairFailure),
+}
+
+/// Neutral port through which the player can query a platform's native-video verdict and request
+/// its user-authorized repair. The platform owns the implementation; player/core owns policy only.
+pub trait NativeVideoRepairPort: Send + Sync {
+    fn verdict(&self) -> NativeVideoVerdict;
+    fn repair(&self) -> Result<(), NativeVideoRepairFailure>;
+}
