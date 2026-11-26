@@ -324,8 +324,8 @@ impl SmbConnectScreen {
         self.exit_armed=false;
         match elem {
             REMOVE_CONNECTION => {
-                self.remove_armed = true;
-                self.error = Some("Choose the server you want to remove.".into());
+                self.remove_armed = !self.remove_armed;
+                self.error = self.remove_armed.then(|| "Choose the server you want to remove.".into());
                 fx.invalidate(plx_machine::present::Provenance::Input);
             }
             PROFILE => {
@@ -535,9 +535,6 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
     if self.editing.is_some_and(|e|e!=to.elem){self.set_editing(None,fx);}
     if self.saved_view && (to.elem as usize)<self.saved.connections().len() {
      self.saved_selection=Some(to.elem as usize);
-    } else if to.elem!=REMOVE_CONNECTION && self.remove_armed {
-     self.remove_armed=false;
-     if self.error.as_deref()==Some("Choose the server you want to remove.") { self.error=None; }
     }
     if self.exit_armed { self.exit_armed=false; }
     if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);self.selected=next;}
