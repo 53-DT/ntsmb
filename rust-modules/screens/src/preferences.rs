@@ -285,10 +285,10 @@ impl Txn {
             Value::HdrOverlay(brightness) => PreferenceCmd::Choose(Choice::HdrOverlayBrightness(brightness), reply),
             Value::NextEpisode(mode) => PreferenceCmd::Choose(Choice::NextEpisode(mode), reply),
             Value::DeckPress(mode) => PreferenceCmd::Choose(Choice::DeckPress(mode), reply),
-            Value::InstantDpadSeeking(seeking) => PreferenceCmd::Choose(Choice::InstantDpadSeeking(seeking), reply),
+            Value::InstantDpadSeeking(seeking) => PreferenceCmd::SystemInstantDpadSeeking { seeking, reply },
             Value::UriEngine(engine) => PreferenceCmd::Choose(Choice::UriEngine(engine), reply),
             Value::DolbyVision(mode) => PreferenceCmd::Choose(Choice::DolbyVision(mode), reply),
-            Value::SkipInterval(interval) => PreferenceCmd::Choose(Choice::SkipInterval(interval), reply),
+            Value::SkipInterval(interval) => PreferenceCmd::SystemSkipInterval { interval, reply },
             // Install-wide, not a seated profile's live setting, so it has no `Choice`.
             Value::UiResolution(mode) => PreferenceCmd::UiResolution { mode, reply },
             _ => return,
@@ -742,7 +742,8 @@ fn field_form(inputs: &FieldListInputs<'_>) -> Form<RowId, Action, SettingsPage>
             }
             let account = field.is_account();
             section = section.item(RowId::Field(field), RowKind::Nav(SettingsPage::Picker(field)), Action::Open, row)
-                .disabled(inputs.read_only && !account);
+                .disabled(inputs.read_only && !account
+                    && !matches!(field, PickerKind::SkipInterval | PickerKind::InstantDpadSeeking));
         }
         // The Player HUD page closes the Player group.
         if inputs.kind == Kind::Playback && index == 1 {

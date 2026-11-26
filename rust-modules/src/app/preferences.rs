@@ -76,8 +76,33 @@ pub(super) fn execute(command: PreferenceCmd) {
                 plx_machine::present::wake_from_worker();
             });
         }
-        // Every live setting saves through the one write door, in `choose_setting`.
+        // Every profile-owned live setting saves through the one write door, in `choose_setting`.
         PreferenceCmd::Choose(choice, reply) => choose_setting(choice, reply),
+        // These two transport controls belong to the TV, not a Plex profile or SMB connection.
+        // Store them in the existing install-wide preference keys on the session record; the
+        // normal unseated boot restore publishes them back into the player cells.
+        PreferenceCmd::SystemSkipInterval { interval, reply } => {
+            let _ = plx_base::storage_worker::submit_retained(move || {
+                let mut already = false;
+                let saved = plx_plex::plex::session::update_guarded_with_outcome(|current| {
+                    already = current.prefs.skip_interval == interval;
+                    (!already).then(|| current.with_pref::<SkipIntervalPref>(interval))
+                }, || true).is_some_and(|write| write.outcome.persisted()) || already;
+                let _ = reply.send(saved);
+                plx_machine::present::wake_from_worker();
+            });
+        }
+        PreferenceCmd::SystemInstantDpadSeeking { seeking, reply } => {
+            let _ = plx_base::storage_worker::submit_retained(move || {
+                let mut already = false;
+                let saved = plx_plex::plex::session::update_guarded_with_outcome(|current| {
+                    already = current.prefs.instant_dpad_seeking == seeking;
+                    (!already).then(|| current.with_pref::<InstantDpadSeekingPref>(seeking))
+                }, || true).is_some_and(|write| write.outcome.persisted()) || already;
+                let _ = reply.send(saved);
+                plx_machine::present::wake_from_worker();
+            });
+        }
         PreferenceCmd::AutoSignIn { on, reply } => {
             let expected = plx_plex::plex::session::peek();
             let tenure = plx_plex::plex::session::tenure();
