@@ -88,14 +88,14 @@ mod tests {
 
     #[test]
     fn cache_is_byte_bounded_and_evicts_least_recently_used() {
-        let mut cache = ThumbnailCache::new(6);
+        let mut cache = ThumbnailCache::new(7);
         assert!(cache.insert("a", vec![1, 2, 3]));
         assert!(cache.insert("b", vec![4, 5]));
         assert_eq!(cache.get("a"), Some(&[1, 2, 3][..]));
         assert!(cache.insert("c", vec![6, 7, 8, 9]));
         assert!(cache.get("a").is_some(), "a was promoted before insertion");
         assert!(cache.get("b").is_none(), "b is the least-recently-used entry");
-        assert_eq!(cache.used_bytes(), 7.min(cache.max_bytes()));
+        assert_eq!(cache.used_bytes(), 7);
         assert!(cache.used_bytes() <= cache.max_bytes());
     }
 
