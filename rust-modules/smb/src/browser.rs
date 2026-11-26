@@ -261,6 +261,15 @@ mod tests {
 }
 
 
+/// Build the stable identity used by the neutral library for an SMB item.
+///
+/// The source namespace prevents equal relative paths on different saved connections from
+/// sharing progress or selection identity. Keep this helper as the single encoding rule used by
+/// both folder conversion and screen-side focus restoration.
+pub fn media_id(source_id: &str, item_path: &str) -> String {
+    format!("{source_id}:{item_path}")
+}
+
 /// Translate an SMB directory result into the backend-neutral library contract.
 /// Path and source identity are supplied by the caller; no SMB credential or protocol
 /// detail is exposed through the returned model.
@@ -278,7 +287,7 @@ pub fn to_core_folder(
             media_type_for_name(&entry.name)
         };
         items.push(ntsmb_core::MediaItem {
-            id: format!("{source_id}:{item_path}"),
+            id: media_id(source_id, &item_path),
             name: entry.name,
             path: item_path,
             size_bytes: (!entry.is_directory).then_some(entry.size),
@@ -311,6 +320,17 @@ fn media_type_for_name(name: &str) -> ntsmb_core::MediaType {
 #[cfg(test)]
 mod core_contract_tests {
     use super::*;
+
+    #[test]
+    fn media_identity_is_stable_and_namespaced_by_source() {
+        assert_eq!(media_id("server-a", "Films/Arrival.mkv"), "server-a:Films/Arrival.mkv");
+        assert_eq!(media_id("server-a", "Films/Arrival.mkv"),
+            media_id("server-a", "Films/Arrival.mkv"));
+        assert_ne!(media_id("server-a", "Films/Arrival.mkv"),
+            media_id("server-b", "Films/Arrival.mkv"));
+        assert_ne!(media_id("server-a", "Films/Arrival.mkv"),
+            media_id("server-a", "Films/Arrival (2).mkv"));
+    }
 
     #[test]
     fn smb_listing_maps_to_backend_neutral_folder_contract() {
