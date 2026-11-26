@@ -1190,6 +1190,32 @@ impl PlayerAdapter {
         self.player_session.report_playing();
     }
 
+    /// Mirror the engine's latest clock into the backend-neutral session. Values are milliseconds,
+    /// matching the neutral core contract; the engine's nanosecond clock remains authoritative.
+    pub fn report_external_position(&mut self, position_ms: u64, duration_ms: Option<u64>) {
+        if self.has_external_playback() {
+            self.player_session.report_position(position_ms, duration_ms);
+        }
+    }
+
+    pub fn report_external_paused(&mut self) {
+        if self.has_external_playback() {
+            self.player_session.report_paused();
+        }
+    }
+
+    pub fn report_external_finished(&mut self) {
+        if self.has_external_playback() {
+            self.player_session.report_finished();
+        }
+    }
+
+    pub fn report_external_error(&mut self, message: impl Into<String>) {
+        if self.has_external_playback() {
+            self.player_session.report_error(message);
+        }
+    }
+
     /// Discard an app-supplied direct-file source when the player refuses to start it.
     /// True while a direct SMB source owns the range bridge for the current item.
     pub fn has_external_playback(&self) -> bool {
