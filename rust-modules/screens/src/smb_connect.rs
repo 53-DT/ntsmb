@@ -249,10 +249,15 @@ impl SmbConnectScreen {
         }
         Ok(())
     }
+    fn library_source_id(&self) -> String {
+        match (self.controller.request(), self.controller.share()) {
+            (Some(request), Some(share)) => plx_smb::browser::media_source_id(&request.profile, share),
+            _ => self.saved_id.clone().unwrap_or_else(|| "smb".to_owned()),
+        }
+    }
+
     fn sync_library_state(&mut self) {
-        let source_id = self.saved_id.clone()
-            .or_else(|| self.controller.share().map(str::to_owned))
-            .unwrap_or_else(|| "smb".to_owned());
+        let source_id = self.library_source_id();
         let path = self.controller.folder().to_owned();
         let entries = self.rows.iter().map(|row| row.entry.clone());
         // Capture the focused SMB entry by path before replacing the neutral listing. The
@@ -315,9 +320,7 @@ impl SmbConnectScreen {
         let Some(row) = self.rows.get(index) else {
             return ntsmb_library::LibraryIntent::None;
         };
-        let source_id = self.saved_id.clone()
-            .or_else(|| self.controller.share().map(str::to_owned))
-            .unwrap_or_else(|| "smb".to_owned());
+        let source_id = self.library_source_id();
         let Ok(path) = plx_smb::browser::child_path(&self.controller.folder().to_owned(), &row.entry.name) else {
             return ntsmb_library::LibraryIntent::None;
         };
