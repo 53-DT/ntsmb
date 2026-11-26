@@ -31,10 +31,26 @@ impl plx_play_feed::ProbeSource for SmbProbeSource {
     }
 }
 
+fn mime_type_for_name(name: &str) -> Option<&'static str> {
+    let extension = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    Some(match extension.as_str() {
+        "mkv" => "video/x-matroska",
+        "mp4" | "m4v" => "video/mp4",
+        "mov" => "video/quicktime",
+        "ts" | "m2ts" | "mts" => "video/mp2t",
+        "webm" => "video/webm",
+        "avi" => "video/x-msvideo",
+        "wmv" => "video/x-ms-wmv",
+        "mpg" | "mpeg" => "video/mpeg",
+        _ => return None,
+    })
+}
+
 pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlayback, String> {
     let reader = std::sync::Arc::new(session.open_file_blocking(path)
         .map_err(|error| format!("Could not open SMB file '{path}': {error}"))?);
-    let source = SmbProbeSource { size: reader.size(), reader: reader.clone() };
+    let size_bytes = reader.size();
+    let source = SmbProbeSource { size: size_bytes, reader: reader.clone() };
     let probe = plx_play_feed::probe_source(std::sync::Arc::new(source))
         .map_err(|error| format!("Could not inspect SMB file '{path}' (FFmpeg custom-AVIO probe): {error}"))?;
     let bridge = RangeServer::start_shared_with_session(reader, session)?;
@@ -71,13 +87,13 @@ pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlay
             .then_some([probe.width, probe.height]),
     };
 
-    let file_name = path.rsplit(|ch| ch == '/' || ch == '\\').find(|part| !part.is_empty()).unwrap_or(path).to_owned();
+    let file_name = path.rsplit(|ch| ch == '/' || ch == '\\\\').find(|part| !part.is_empty()).unwrap_or(path).to_owned();
     let source = ntsmb_core::PlaybackSource {
         source_id: "smb".to_owned(),
         uri: bridge.url().to_owned(),
         display_name: file_name.clone(),
-        size_bytes: None,
-        mime_type: None,
+        size_bytes: Some(size_bytes),
+        mime_type: mime_type_for_name(&file_name).map(str::to_owned),
     };
     Ok(PreparedPlayback { source, play, bridge, file_name, probe })
 }
@@ -85,8 +101,8 @@ pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlay
 
 // SMB sibling playback is an in-memory queue owned by the SMB feature. The cursor
 // supports both the player's Previous/Next buttons and automatic advance at end-of-file.
-// The existing player returns to the browser for a single frame; that page prepares the
-// selected sibling off the frame thread and opens it through the normal playback path.
+// The existing player returns to the browser for a single frame; that page prepares
+// the selected sibling off the frame thread and opens it through the normal playback path.
 struct AutoplayState {
     items: Vec<(usize, crate::controller::PlayRequest)>,
     current: Option<usize>,
