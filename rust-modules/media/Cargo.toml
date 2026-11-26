@@ -46,6 +46,7 @@ lab-diagnostics = []
 test-support = ["plx_media_codecs/test-support", "plx_base/test-support", "plx_machine/test-support", "plx_os/test-support", "plx_net/test-support", "plx_plex/test-support", "plx_telemetry/test-support", "plx_data/test-support"]
 
 [dependencies]
+ntsmb_core = { path = "../core" }
 plx_playback_contract = { path = "../playback-contract" }
 # Loopback HTTP Range bridge for direct SMB media playback.
 plx_smb = { path = "../smb" }
