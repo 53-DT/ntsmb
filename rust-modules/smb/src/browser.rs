@@ -268,33 +268,42 @@ pub fn to_core_folder(
     source_id: &str,
     path: &str,
     entries: impl IntoIterator<Item = Entry>,
-) -> ntsmb_core::MediaFolder {
-    let items = entries.into_iter().map(|entry| {
-        let is_directory = entry.is_directory;
-        let media_type = if is_directory {
+) -> Result<ntsmb_core::MediaFolder, String> {
+    let mut items = Vec::new();
+    for entry in entries {
+        let item_path = child_path(path, &entry.name)?;
+        let media_type = if entry.is_directory {
             ntsmb_core::MediaType::Folder
-        } else if is_video_name(&entry.name) {
-            ntsmb_core::MediaType::Video
         } else {
-            ntsmb_core::MediaType::Other
+            media_type_for_name(&entry.name)
         };
-        let item_path = child_path(path, &entry.name)
-            .unwrap_or_else(|_| entry.name.clone());
-        ntsmb_core::MediaItem {
+        items.push(ntsmb_core::MediaItem {
             id: format!("{source_id}:{item_path}"),
             name: entry.name,
             path: item_path,
-            size_bytes: (!is_directory).then_some(entry.size),
-            is_directory,
+            size_bytes: (!entry.is_directory).then_some(entry.size),
+            is_directory: entry.is_directory,
             media_type,
-        }
-    }).collect();
-
-    ntsmb_core::MediaFolder {
+        });
+    }
+    Ok(ntsmb_core::MediaFolder {
         source_id: source_id.to_owned(),
         path: path.trim_matches('/').to_owned(),
         parent_path: parent_path(path),
         items,
+    })
+}
+
+fn media_type_for_name(name: &str) -> ntsmb_core::MediaType {
+    let extension = name.rsplit_once('.').map(|(_, ext)| ext).unwrap_or("");
+    if is_video_name(name) {
+        ntsmb_core::MediaType::Video
+    } else if ["aac", "ac3", "aiff", "alac", "flac", "m4a", "mp3", "ogg", "opus", "wav", "wma"].iter().any(|known| extension.eq_ignore_ascii_case(known)) {
+        ntsmb_core::MediaType::Audio
+    } else if ["bmp", "gif", "heic", "jpeg", "jpg", "png", "tif", "tiff", "webp"].iter().any(|known| extension.eq_ignore_ascii_case(known)) {
+        ntsmb_core::MediaType::Image
+    } else {
+        ntsmb_core::MediaType::Other
     }
 }
 
@@ -313,7 +322,7 @@ mod core_contract_tests {
                 Entry { name: "Extras".into(), size: 0, is_directory: true },
                 Entry { name: "notes.txt".into(), size: 20, is_directory: false },
             ],
-        );
+        ).unwrap();
 
         assert_eq!(folder.source_id, "nas-movies");
         assert_eq!(folder.path, "Films/Drama");
@@ -331,9 +340,21 @@ mod core_contract_tests {
             "nas-movies",
             "",
             vec![Entry { name: "Movie.mp4".into(), size: 7, is_directory: false }],
-        );
+        ).unwrap();
         assert_eq!(folder.path, "");
         assert_eq!(folder.parent_path, None);
         assert_eq!(folder.items[0].path, "Movie.mp4");
+    }
+    #[test]
+    fn core_mapping_classifies_audio_and_images_and_rejects_invalid_names() {
+        let folder = to_core_folder("nas-media", "", vec![
+            Entry { name: "theme.FLAC".into(), size: 9, is_directory: false },
+            Entry { name: "poster.webp".into(), size: 8, is_directory: false },
+        ]).unwrap();
+        assert_eq!(folder.items[0].media_type, ntsmb_core::MediaType::Audio);
+        assert_eq!(folder.items[1].media_type, ntsmb_core::MediaType::Image);
+        assert!(to_core_folder("nas-media", "", vec![
+            Entry { name: "../escape.mkv".into(), size: 1, is_directory: false },
+        ]).is_err());
     }
 }
