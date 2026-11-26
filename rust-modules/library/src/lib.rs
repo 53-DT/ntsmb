@@ -280,3 +280,6 @@ mod tests {
 
 /// Core-contract bridge for saved playback progress.
 pub mod progress;
+
+/// Bounded opaque thumbnail storage; image decoding and fetching remain adapter-owned.
+pub mod thumbnail_cache;
