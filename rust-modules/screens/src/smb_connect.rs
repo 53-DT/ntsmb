@@ -118,28 +118,24 @@ impl<H: Host<Elem = u32>> CardSource<H> for SmbCardSource<'_> {
 impl SmbConnectScreen {
     pub fn new(entry: EntryId) -> Self {
         let form = ConnectForm::new();
-        // SMB profiles share FinNative's persisted session record.
+        // Read the old protected session extension only as a one-time migration source.
+        // All subsequent writes go to the app-owned standalone SMB store.
         let session = plx_plex::plex::session::peek();
         let saved_payload = session.extensions.0
             .get("ntsmb_connections").and_then(serde_json::Value::as_str);
-        // One-time migration from the standalone connection file used by older builds.
-        let saved = if let Some(payload) = saved_payload {
-            plx_smb::store::SavedStore::open_session(Some(payload))
-        } else {
-            let mut legacy_paths = vec![plx_base::paths::persistent_state_root().join("ntsmb-connections.json")];
-            legacy_paths.extend(plx_base::paths::hud_candidates().into_iter()
-                .filter(|path| path.parent() != Some(plx_base::paths::runtime_dir()))
-                .map(|path| {
-                    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("huds");
-                    let prefix = file_name.strip_suffix("huds").unwrap_or("");
-                    path.with_file_name(format!("{prefix}ntsmb-connections.json"))
-                }));
-            legacy_paths.push(plx_base::paths::runtime_dir().join("ntsmb-connections.json"));
-            legacy_paths.dedup();
-            plx_smb::store::SavedStore::open_with_runtime(
-                legacy_paths, Some(plx_base::paths::runtime_dir().to_path_buf())
-            )
-        };
+        let mut legacy_paths = vec![plx_base::paths::persistent_state_root().join("ntsmb-connections.json")];
+        legacy_paths.extend(plx_base::paths::hud_candidates().into_iter()
+            .filter(|path| path.parent() != Some(plx_base::paths::runtime_dir()))
+            .map(|path| {
+                let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("huds");
+                let prefix = file_name.strip_suffix("huds").unwrap_or("");
+                path.with_file_name(format!("{prefix}ntsmb-connections.json"))
+            }));
+        legacy_paths.push(plx_base::paths::runtime_dir().join("ntsmb-connections.json"));
+        legacy_paths.dedup();
+        let saved = plx_smb::store::SavedStore::open_with_legacy_session(
+            legacy_paths, Some(plx_base::paths::runtime_dir().to_path_buf()), saved_payload
+        );
         let saved_view = true;
         let storage_warning = saved.saved_temporarily().then(|| "Connection details are stored in temporary TV storage and may be lost after a TV restart.".into());
         let saved_selection = (!saved.connections().is_empty()).then_some(0);
@@ -158,15 +154,7 @@ impl SmbConnectScreen {
     }
 
     fn persist_saved(&self) -> Result<(), String> {
-        let encoded = self.saved.encode_session()?;
-        let written = plx_plex::plex::session::update(|current| {
-            let mut next = current.clone();
-            next.extensions.0.insert("ntsmb_connections".to_owned(), serde_json::Value::String(encoded));
-            Some(next)
-        });
-        if written { Ok(()) } else {
-            Err("Could not save SMB connections in the FinNative session. Sign in first and try again.".into())
-        }
+        self.saved.save()
     }
 
     fn saved_row_geom(n: usize) -> (f32, f32) {
