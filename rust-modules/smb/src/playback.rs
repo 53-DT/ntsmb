@@ -174,3 +174,23 @@ pub fn take_autoplay_next() -> Option<(usize, crate::controller::PlayRequest)> {
     state.current = Some(target);
     Some(item)
 }
+
+
+#[cfg(test)]
+mod mime_tests {
+    use super::mime_type_for_name;
+
+    #[test]
+    fn recognizes_common_video_container_types_case_insensitively() {
+        assert_eq!(mime_type_for_name("movie.MKV"), Some("video/x-matroska"));
+        assert_eq!(mime_type_for_name("clip.mp4"), Some("video/mp4"));
+        assert_eq!(mime_type_for_name("broadcast.ts"), Some("video/mp2t"));
+        assert_eq!(mime_type_for_name("film.webm"), Some("video/webm"));
+    }
+
+    #[test]
+    fn unknown_or_extensionless_names_have_no_guessed_mime() {
+        assert_eq!(mime_type_for_name("movie"), None);
+        assert_eq!(mime_type_for_name("movie.unknown"), None);
+    }
+}
