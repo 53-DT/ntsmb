@@ -15,6 +15,7 @@ default = []
 playback = ["dep:plx_play_feed", "dep:plx_playback_contract"]
 
 [dependencies]
+ntsmb_core = { path = "../core" }
 plx_os = { path = "../os" }
 plx_play_feed = { path = "../play-feed", optional = true }
 plx_playback_contract = { path = "../playback-contract", optional = true }
