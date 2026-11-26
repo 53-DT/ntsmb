@@ -328,6 +328,29 @@ impl SmbConnectScreen {
         self.library_state.activate_media_id(&media_id)
     }
 
+    /// Keep the SMB I/O controller's cursor aligned with the neutral library's focused
+    /// media identity. The library owns focus policy; the SMB controller only receives the
+    /// row movement needed to execute its existing navigation and playback effects.
+    fn focus_library_index(&mut self, index: usize) {
+        self.library_state.select_index(index);
+        let Some(media_id) = self.library_state.selected_media_id().map(str::to_owned) else {
+            self.selected = 0;
+            return;
+        };
+        let source_id = self.library_source_id();
+        let folder = self.controller.folder().to_owned();
+        let target = self.rows.iter().position(|row| {
+            plx_smb::browser::child_path(&folder, &row.entry.name).ok()
+                .map(|path| plx_smb::browser::media_id(&source_id, &path) == media_id)
+                .unwrap_or(false)
+        });
+        if let Some(target) = target {
+            let current = self.controller.browser().selected();
+            self.controller.move_selection(target as isize - current as isize);
+            self.selected = target;
+        }
+    }
+
     fn activate_browser_index(&mut self, index: usize) {
         if index >= self.rows.len() { return; }
         let intent = self.select_library_row(index);
@@ -584,7 +607,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
      self.saved_selection=Some(to.elem as usize);
     }
     if self.exit_armed { self.exit_armed=false; }
-    if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);let _=self.select_library_row(next);self.selected=next;}
+    if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;self.focus_library_index(next);}
     Handled::Yes
    }
    ScreenEvent::WillLeave(_)|ScreenEvent::Cover|ScreenEvent::Suspend|ScreenEvent::Unmount=>{self.set_editing(None,fx);Handled::No}
