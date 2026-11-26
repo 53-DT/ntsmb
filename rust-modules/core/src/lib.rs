@@ -57,6 +57,13 @@ pub struct PlaybackSource {
     pub mime_type: Option<String>,
 }
 
+/// A backend-owned resource whose lifetime must cover the active playback session.
+///
+/// The player retains this opaque lease without depending on the source implementation. Dropping
+/// it releases backend resources (for example, an SMB Range server and its authenticated session).
+/// Platform repair and native decoder resources are deliberately not represented by this trait.
+pub trait PlaybackLease: Send + Sync {}
+
 /// User-managed connection/profile metadata. Secret material is deliberately excluded.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserProfile {
