@@ -1094,12 +1094,6 @@ enum RootId {
     /// One server's switch. Its key is [`PLAINTEXT_KEY_BASE`] plus its position in the section
     /// ([`root_form`] assigns it); its identity is the machine, so a rebuild keeps the row.
     Plaintext(ServerMachineId),
-    Privacy,
-    /// The single Diagnostics row (Settings v2): its value reads Off or On and it opens the page
-    /// that holds the trace rows.
-    Diagnostics,
-    Legal,
-    About,
 }
 
 /// The first key of the per-server switches: past every fixed [`RootId`] key.
@@ -1116,12 +1110,8 @@ impl FormId for RootId {
             RootId::Language => 4,
             RootId::AutoSignIn => 5,
             RootId::TrailerAutoplay => 6,
-            RootId::Privacy => 7,
-            RootId::Legal => 8,
-            RootId::About => 9,
             RootId::Resolution => 10,
             RootId::UnderPosters => 11,
-            RootId::Diagnostics => 12,
             // the base; `root_form` adds the position (`item_keyed`)
             RootId::Plaintext(_) => PLAINTEXT_KEY_BASE,
         })
@@ -1140,10 +1130,6 @@ impl FormId for RootId {
             RootId::Resolution => "resolution",
             // one row per server, so no one name fits them all: the position names each (`row.<i>`)
             RootId::Plaintext(_) => return None,
-            RootId::Privacy => "privacy",
-            RootId::Diagnostics => "diagnostics",
-            RootId::Legal => "legal",
-            RootId::About => "about",
         })
     }
 }
@@ -1256,7 +1242,6 @@ struct PlaintextRowInput {
 /// state) before calling the pure builder, so the builder itself never reads a global and a test
 /// can drive it directly with a synthesized combination no real session may currently be in.
 struct RootInputs {
-    trace: plx_os::playback_trace::Status,
     signed_in: bool,
     /// A one-person account already skips the profile picker; only a multi-user account is ever
     /// shown the Automatically Sign In switch.
@@ -1313,10 +1298,6 @@ fn sentence_for(id: Option<&RootId>) -> Cow<'static, str> {
         Some(RootId::AutoSignIn) => Cow::Borrowed(msg::settings_auto_sign_in_detail()),
         Some(RootId::TrailerAutoplay) => Cow::Borrowed(msg::settings_trailers_detail()),
         Some(RootId::Resolution) => Cow::Borrowed(msg::settings_resolution_detail()),
-        Some(RootId::Privacy) => Cow::Borrowed(msg::settings_privacy_detail()),
-        Some(RootId::Diagnostics) => Cow::Borrowed(msg::settings_diagnostics_detail()),
-        Some(RootId::Legal) => Cow::Borrowed(msg::settings_legal_detail()),
-        Some(RootId::About) => Cow::Borrowed(msg::settings_about_detail()),
         Some(RootId::Plaintext(_)) | None => Cow::Borrowed(msg::settings_root_copy()),
     }
 }
@@ -1499,7 +1480,6 @@ impl RootPage {
         self.state.under_posters = self.inputs.preference::<plx_plex::plex::session::UnderPostersPref>();
         let plaintext = if signed_in { self.plaintext_inputs() } else { Vec::new() };
         let form = root_form(&RootInputs {
-            trace: self.state.trace,
             signed_in, multi_user, library_count: directory.pinned_count() as i64,
             auto_sign_in, trailer_autoplay, resolution, resolution_offered, language: self.state.language,
             under_posters: self.state.under_posters, plaintext,
