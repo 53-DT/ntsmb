@@ -270,8 +270,11 @@ impl SmbConnectScreen {
         if let Ok(folder) = plx_smb::browser::to_core_folder(&source_id, &path, entries) {
             self.library_state.set_folder(folder);
             let target = self.controller.browser().selected();
-            let current = self.library_state.selected();
-            self.library_state.move_selection(target as isize - current as isize);
+            self.library_state.select_index(target);
+        } else {
+            // Never leave a previous folder visible/selectable after an unsafe listing fails
+            // neutral conversion (for example, a rejected traversal path).
+            self.library_state.clear_folder();
         }
     }
 
