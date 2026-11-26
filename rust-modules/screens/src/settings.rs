@@ -1374,7 +1374,7 @@ fn root_form(inputs: &RootInputs) -> Form<RootId, Action, SettingsPage> {
             RootId::SwitchProfile,
             RowKind::Button,
             Action::SwitchProfile,
-            Row::new("Switch profile").chevron(true),
+            Row::new("Switch connection").chevron(true),
         );
     let system = FormSection::new(plx_os::i18n::msg::settings_system_section())
         .item(
@@ -1465,7 +1465,6 @@ fn root_form(inputs: &RootInputs) -> Form<RootId, Action, SettingsPage> {
         .section(playback)
         .section(system)
         .section(plaintext)
-        .section(support)
 }
 
 impl RootPage {

@@ -324,23 +324,8 @@ impl SmbConnectScreen {
         self.exit_armed=false;
         match elem {
             REMOVE_CONNECTION => {
-                if !self.remove_armed {
-                    self.remove_armed = true;
-                    self.error = Some("Press Remove again to confirm deleting the selected connection.".into());
-                } else if let Some(index) = self.saved_selection {
-                    if let Some(connection) = self.saved.connections().get(index) {
-                        let id = connection.id.clone();
-                        self.saved.remove(&id);
-                        self.saved_selection = if self.saved.connections().is_empty() { None } else { Some(index.min(self.saved.connections().len()-1)) };
-                        self.saved_id = None;
-                        self.remove_armed = false;
-                        self.error = None;
-                        if let Err(error) = self.saved.save() { self.error = Some(error); }
-                    }
-                } else {
-                    self.remove_armed = false;
-                    self.error = Some("Select a saved connection first.".into());
-                }
+                self.remove_armed = true;
+                self.error = Some("Choose the server you want to remove.".into());
                 fx.invalidate(plx_machine::present::Provenance::Input);
             }
             PROFILE => {
@@ -536,13 +521,22 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Machine<H> 
    ScreenEvent::FocusMoved{to,..}=>{
     if self.editing.is_some_and(|e|e!=to.elem){self.set_editing(None,fx);}
     if self.saved_view && (to.elem as usize)<self.saved.connections().len() {
-     self.saved_selection=Some(to.elem as usize);
-     self.remove_armed=false;
-    } else if to.elem!=REMOVE_CONNECTION {
+     let index=to.elem as usize;
+     self.saved_selection=Some(index);
      if self.remove_armed {
-      self.remove_armed=false;
-      if self.error.as_deref()==Some("Press Remove again to confirm deleting the selected connection.") { self.error=None; }
+      if let Some(connection)=self.saved.connections().get(index) {
+       let id=connection.id.clone();
+       self.saved.remove(&id);
+       self.saved_selection=if self.saved.connections().is_empty(){None}else{Some(index.min(self.saved.connections().len()-1))};
+       self.saved_id=None;
+       self.remove_armed=false;
+       self.error=None;
+       if let Err(error)=self.saved.save(){self.error=Some(error);}
+      }
      }
+    } else if to.elem!=REMOVE_CONNECTION && self.remove_armed {
+     self.remove_armed=false;
+     if self.error.as_deref()==Some("Choose the server you want to remove.") { self.error=None; }
     }
     if self.exit_armed { self.exit_armed=false; }
     if self.controller.phase()==Phase::Browsing && to.elem>=SHARE_BASE {let next=(to.elem-SHARE_BASE) as usize;let delta=next as isize-self.controller.browser().selected() as isize;self.controller.move_selection(delta);self.selected=next;}
@@ -687,7 +681,7 @@ impl<H:crate::registry::AppLike<Memory=crate::registry::PageMemory>> Screen<H> f
    let add_r=Self::saved_footer_rect(NEW_CONNECTION).unwrap();
    Button::new(add.as_ptr(),theme::size::BODY,add_r).focused(focus==Some(NEW_CONNECTION)).draw(&Env::inert(),p);
    f.stop(p,Stop{key:FocusKey{entry:self.entry,elem:NEW_CONNECTION},rect:add_r,rest_rect:add_r,clip:Rect::FULL,hover:plx_ui::screen::Hover::Focus,activate:plx_ui::screen::Activate::Press});
-   let remove=CString::new(if self.remove_armed{"Confirm remove"}else{"Remove selected"}).unwrap();
+   let remove=CString::new(if self.remove_armed{"Select server to remove"}else{"Remove selected"}).unwrap();
    let remove_r=Self::saved_footer_rect(REMOVE_CONNECTION).unwrap();
    Button::new(remove.as_ptr(),theme::size::BODY,remove_r).focused(focus==Some(REMOVE_CONNECTION)).draw(&Env::inert(),p);
    f.stop(p,Stop{key:FocusKey{entry:self.entry,elem:REMOVE_CONNECTION},rect:remove_r,rest_rect:remove_r,clip:Rect::FULL,hover:plx_ui::screen::Hover::Focus,activate:plx_ui::screen::Activate::Press});
