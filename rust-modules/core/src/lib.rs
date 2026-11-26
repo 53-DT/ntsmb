@@ -159,7 +159,7 @@ pub enum NativeVideoRepairState {
 
 /// Neutral port through which the player can query a platform's native-video verdict and request
 /// its user-authorized repair. The platform owns the implementation; player/core owns policy only.
-pub trait NativeVideoRepairPort: Send + Sync {
+pub trait NativeVideoRepairPort: Send + Sync + 'static {
     fn verdict(&self) -> NativeVideoVerdict;
     fn repair(&self) -> Result<(), NativeVideoRepairFailure>;
 }
