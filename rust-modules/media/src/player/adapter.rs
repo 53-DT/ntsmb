@@ -527,7 +527,7 @@ pub struct PlayerAdapter {
     abr_inbox: Option<(crate::route::RouteStartAttempt, crate::adaptive::AbrInbox)>,
     /// Backend-independent periodic reporting resource for the current physical attempt.
     timeline: Option<timeline::TimelineRunner>,
-    repair: Option<(u64, std::sync::mpsc::Receiver<Result<(), plx_os::tv::native_video::Failure>>)>,
+    repair: Option<(u64, std::sync::mpsc::Receiver<Result<(), ntsmb_core::NativeVideoRepairFailure>>)>,
     release: super::release::NativeRelease,
     /// Effects produced by an addressed URI release while the backend poll has no session
     /// borrow. The release machine owns the sole queued transaction; these are only its IO work.
@@ -1873,16 +1873,22 @@ impl PlayerAdapter {
         self.clear_feed_attempt();
     }
 
-    /// UI-thread resource effect. The owner spends the attempt before the worker can run.
-    pub fn repair_sandbox(&mut self, owner: &mut super::machine::RepairAttempt, supported: bool) {
+    /// UI-thread resource effect. The neutral port is supplied by the platform composition;
+    /// the player owns the one-shot policy and runs the privileged operation off-frame.
+    pub fn repair_sandbox(
+        &mut self,
+        owner: &mut super::machine::RepairAttempt,
+        port: std::sync::Arc<dyn ntsmb_core::NativeVideoRepairPort>,
+    ) {
+        let supported = matches!(port.verdict(), ntsmb_core::NativeVideoVerdict::Blocked(_));
         let Some(token) = owner.begin(supported) else { return; };
         let (tx, rx) = std::sync::mpsc::channel();
         if plx_base::task::spawn_small("jail repair", move || {
-            let _ = tx.send(plx_os::tv::native_video::repair());
+            let _ = tx.send(port.repair());
         }) {
             self.repair = Some((token, rx));
         } else {
-            owner.complete(token, Err(plx_os::tv::native_video::Failure::StartFailed));
+            owner.complete(token, Err(ntsmb_core::NativeVideoRepairFailure::StartFailed));
         }
     }
 
@@ -1892,7 +1898,7 @@ impl PlayerAdapter {
         let result = match rx.try_recv() {
             Ok(result) => result,
             Err(std::sync::mpsc::TryRecvError::Empty) => return false,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(plx_os::tv::native_video::Failure::StartFailed),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(ntsmb_core::NativeVideoRepairFailure::StartFailed),
         };
         let changed = owner.complete(*token, result);
         self.repair = None;
