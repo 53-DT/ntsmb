@@ -280,6 +280,27 @@ pub fn media_id(source_id: &str, item_path: &str) -> String {
     format!("{source_id}:{item_path}")
 }
 
+/// Resolve a visible SMB entry to the same stable identity used by the neutral library.
+/// Keeping this conversion here prevents screens from reimplementing SMB path rules.
+pub fn entry_media_id(source_id: &str, folder: &str, entry_name: &str) -> Result<String, String> {
+    let path = child_path(folder, entry_name)?;
+    Ok(media_id(source_id, &path))
+}
+
+/// Find the SMB row corresponding to a neutral library media identity.
+pub fn entry_index_for_media_id(
+    source_id: &str,
+    folder: &str,
+    entries: &[BrowserEntry],
+    target_media_id: &str,
+) -> Option<usize> {
+    entries.iter().position(|row| {
+        entry_media_id(source_id, folder, &row.entry.name)
+            .map(|id| id == target_media_id)
+            .unwrap_or(false)
+    })
+}
+
 /// Translate an SMB directory result into the backend-neutral library contract.
 /// Path and source identity are supplied by the caller; no SMB credential or protocol
 /// detail is exposed through the returned model.
@@ -400,4 +421,17 @@ mod core_contract_tests {
             Entry { name: "../escape.mkv".into(), size: 1, is_directory: false },
         ]).is_err());
     }
+    #[test]
+    fn entry_identity_round_trips_to_the_visible_smb_row() {
+        let entries = visible_entries([
+            Entry { name: "A folder".into(), size: 0, is_directory: true },
+            Entry { name: "Arrival.mkv".into(), size: 1, is_directory: false },
+        ]);
+        let id = entry_media_id("source-a", "Films", "Arrival.mkv").unwrap();
+        assert_eq!(entry_index_for_media_id("source-a", "Films", &entries, &id), Some(1));
+        assert_eq!(entry_index_for_media_id("source-b", "Films", &entries, &id), None);
+        assert_eq!(entry_index_for_media_id("source-a", "Other", &entries, &id), None);
+        assert!(entry_media_id("source-a", "Films", "../escape.mkv").is_err());
+    }
+
 }

@@ -265,8 +265,7 @@ impl SmbConnectScreen {
         // inheriting a row number that may now point at a different movie.
         let target = self.controller.browser().selected();
         let focused_id = self.controller.browser().entries().get(target)
-            .and_then(|row| plx_smb::browser::child_path(&path, &row.entry.name).ok())
-            .map(|item_path| plx_smb::browser::media_id(&source_id, &item_path));
+            .and_then(|row| plx_smb::browser::entry_media_id(&source_id, &path, &row.entry.name).ok());
         if let Ok(folder) = plx_smb::browser::to_core_folder(&source_id, &path, entries) {
             self.library_state.set_folder(folder);
             let restored = focused_id.as_deref()
@@ -321,10 +320,11 @@ impl SmbConnectScreen {
             return ntsmb_library::LibraryIntent::None;
         };
         let source_id = self.library_source_id();
-        let Ok(path) = plx_smb::browser::child_path(&self.controller.folder().to_owned(), &row.entry.name) else {
+        let Ok(media_id) = plx_smb::browser::entry_media_id(
+            &source_id, &self.controller.folder().to_owned(), &row.entry.name
+        ) else {
             return ntsmb_library::LibraryIntent::None;
         };
-        let media_id = plx_smb::browser::media_id(&source_id, &path);
         self.library_state.activate_media_id(&media_id)
     }
 
@@ -339,11 +339,9 @@ impl SmbConnectScreen {
         };
         let source_id = self.library_source_id();
         let folder = self.controller.folder().to_owned();
-        let target = self.rows.iter().position(|row| {
-            plx_smb::browser::child_path(&folder, &row.entry.name).ok()
-                .map(|path| plx_smb::browser::media_id(&source_id, &path) == media_id)
-                .unwrap_or(false)
-        });
+        let target = plx_smb::browser::entry_index_for_media_id(
+            &source_id, &folder, &self.rows, &media_id
+        );
         if let Some(target) = target {
             let current = self.controller.browser().selected();
             self.controller.move_selection(target as isize - current as isize);
