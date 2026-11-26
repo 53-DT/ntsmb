@@ -1432,33 +1432,6 @@ fn root_form(inputs: &RootInputs) -> Form<RootId, Action, SettingsPage> {
             );
         }
     }
-    let support = FormSection::new(plx_os::i18n::msg::settings_support_section())
-        .item(
-            RootId::Privacy,
-            RowKind::Nav(SettingsPage::Privacy),
-            Action::Door,
-            Row::new(plx_os::i18n::msg::settings_privacy_title()).chevron(true),
-        )
-        .item(
-            RootId::Diagnostics,
-            RowKind::Nav(SettingsPage::Diagnostics),
-            Action::Door,
-            Row::new(plx_os::i18n::msg::settings_trace_section())
-                .value(diagnostics::root_value(inputs.trace))
-                .chevron(true),
-        )
-        .item(
-            RootId::Legal,
-            RowKind::Nav(SettingsPage::Legal),
-            Action::Door,
-            Row::new(plx_os::i18n::msg::settings_legal_title()).chevron(true),
-        )
-        .item(
-            RootId::About,
-            RowKind::Nav(SettingsPage::About),
-            Action::Door,
-            Row::new(plx_os::i18n::msg::settings_about_title()).chevron(true),
-        );
     Form::new()
         .section(libraries)
         .section(connections)
