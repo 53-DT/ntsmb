@@ -321,7 +321,7 @@ impl SmbConnectScreen {
         let Ok(path) = plx_smb::browser::child_path(&self.controller.folder().to_owned(), &row.entry.name) else {
             return ntsmb_library::LibraryIntent::None;
         };
-        let media_id = format!("{source_id}:{path}");
+        let media_id = plx_smb::browser::media_id(&source_id, &path);
         self.library_state.activate_media_id(&media_id)
     }
 
