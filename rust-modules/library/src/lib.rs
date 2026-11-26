@@ -90,31 +90,37 @@ impl LibraryBrowser {
         self.selected = 0;
     }
 
+    fn preserve_selection_while(&mut self, update: impl FnOnce(&mut Self)) {
+        let selected_id = self.selected_item().map(|item| item.id.clone());
+        update(self);
+        if let Some(selected_id) = selected_id {
+            if let Some(index) = self.visible_items().iter().position(|item| item.id == selected_id) {
+                self.selected = index;
+                return;
+            }
+        }
+        self.clamp_selection();
+    }
+
     pub fn set_query(&mut self, query: impl Into<String>) {
         let query = query.into();
         if self.query != query {
-            self.query = query;
-            self.selected = 0;
+            self.preserve_selection_while(|browser| browser.query = query);
         }
-        self.clamp_selection();
     }
 
     pub fn clear_query(&mut self) { self.set_query(String::new()); }
 
     pub fn set_filter(&mut self, filter: MediaFilter) {
         if self.filter != filter {
-            self.filter = filter;
-            self.selected = 0;
+            self.preserve_selection_while(|browser| browser.filter = filter);
         }
-        self.clamp_selection();
     }
 
     pub fn set_sort(&mut self, sort: LibrarySort) {
         if self.sort != sort {
-            self.sort = sort;
-            self.selected = 0;
+            self.preserve_selection_while(|browser| browser.sort = sort);
         }
-        self.clamp_selection();
     }
 
     fn clamp_selection(&mut self) {
@@ -313,3 +319,51 @@ pub mod thumbnail_cache;
 
 /// Stable identity-based focus save/restore helpers for screen adapters.
 pub mod selection;
+
+
+#[cfg(test)]
+mod selection_policy_tests {
+    use super::*;
+
+    fn item(id: &str, name: &str, media_type: MediaType, is_directory: bool) -> MediaItem {
+        MediaItem { id: id.into(), name: name.into(), path: name.into(),
+            size_bytes: Some(1), is_directory, media_type }
+    }
+
+    fn browser() -> LibraryBrowser {
+        let mut browser = LibraryBrowser::default();
+        browser.set_folder(MediaFolder {
+            source_id: "smb".into(), path: String::new(), parent_path: None,
+            items: vec![
+                item("a", "Alpha.mkv", MediaType::Video, false),
+                item("b", "Bravo.mp3", MediaType::Audio, false),
+                item("c", "Charlie.mkv", MediaType::Video, false),
+            ],
+        });
+        browser.select_media_id("b");
+        browser
+    }
+
+    #[test]
+    fn sorting_preserves_the_focused_item_identity() {
+        let mut browser = browser();
+        browser.set_sort(LibrarySort::NameDescending);
+        assert_eq!(browser.selected_item().map(|item| item.id.as_str()), Some("b"));
+    }
+
+    #[test]
+    fn filtering_preserves_focus_when_the_item_remains_visible() {
+        let mut browser = browser();
+        browser.set_filter(MediaFilter::Audio);
+        assert_eq!(browser.selected_item().map(|item| item.id.as_str()), Some("b"));
+    }
+
+    #[test]
+    fn filtering_out_the_focused_item_clamps_to_a_valid_visible_row() {
+        let mut browser = browser();
+        browser.set_filter(MediaFilter::Video);
+        assert_eq!(browser.visible_items().len(), 2);
+        assert!(browser.selected_item().is_some());
+        assert_ne!(browser.selected_item().map(|item| item.id.as_str()), Some("b"));
+    }
+}
