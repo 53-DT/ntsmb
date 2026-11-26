@@ -261,7 +261,7 @@ impl SmbConnectScreen {
         let target = self.controller.browser().selected();
         let focused_id = self.controller.browser().entries().get(target)
             .and_then(|row| plx_smb::browser::child_path(&path, &row.entry.name).ok())
-            .map(|item_path| format!("{source_id}:{item_path}"));
+            .map(|item_path| plx_smb::browser::media_id(&source_id, &item_path));
         if let Ok(folder) = plx_smb::browser::to_core_folder(&source_id, &path, entries) {
             self.library_state.set_folder(folder);
             let restored = focused_id.as_deref()
