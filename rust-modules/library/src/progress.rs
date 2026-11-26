@@ -37,6 +37,18 @@ pub fn persist_progress<R: PlaybackStateRepository>(
     Ok(true)
 }
 
+/// Persist an exported player snapshot without changing library state.
+/// Invalid/unavailable progress (for example, unknown or zero duration) is ignored.
+pub fn persist_player_snapshot<R: PlaybackStateRepository>(
+    repository: &R,
+    snapshot: &ntsmb_player::PlayerSnapshot,
+    media_id: impl Into<String>,
+) -> Result<bool, String> {
+    let Some(state) = snapshot.to_playback_state(media_id) else { return Ok(false); };
+    repository.save_state(&state)?;
+    Ok(true)
+}
+
 /// Delete persisted and in-memory progress together.
 pub fn delete_progress<R: PlaybackStateRepository>(
     browser: &mut LibraryBrowser,
