@@ -163,3 +163,77 @@ pub trait NativeVideoRepairPort: Send + Sync + 'static {
     fn verdict(&self) -> NativeVideoVerdict;
     fn repair(&self) -> Result<(), NativeVideoRepairFailure>;
 }
+
+
+/// Process-lifetime authority for the one explicitly confirmed native-video sandbox repair.
+/// The platform supplies the verdict and executes repair through NativeVideoRepairPort; this
+/// neutral value guarantees that a process can issue at most one attempt. It has no reset method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeVideoRepairAttempt {
+    state: NativeVideoRepairState,
+}
+
+impl NativeVideoRepairAttempt {
+    pub const fn new() -> Self { Self { state: NativeVideoRepairState::Idle } }
+    pub fn state(&self) -> NativeVideoRepairState { self.state }
+    pub fn begin(&mut self, supported: bool) -> Option<u64> {
+        if self.state != NativeVideoRepairState::Idle { return None; }
+        if !supported {
+            self.state = NativeVideoRepairState::Failed(NativeVideoRepairFailure::Unsupported);
+            return None;
+        }
+        self.state = NativeVideoRepairState::Running;
+        Some(1)
+    }
+    /// The single issued token can land only once. Wrong or duplicate completions cannot rewrite it.
+    pub fn complete(&mut self, token: u64, result: Result<(), NativeVideoRepairFailure>) -> bool {
+        if token != 1 || self.state != NativeVideoRepairState::Running { return false; }
+        self.state = match result {
+            Ok(()) => NativeVideoRepairState::Repaired,
+            Err(error) => NativeVideoRepairState::Failed(error),
+        };
+        true
+    }
+}
+
+impl Default for NativeVideoRepairAttempt {
+    fn default() -> Self { Self::new() }
+}
+
+#[cfg(test)]
+mod native_video_repair_attempt_tests {
+    use super::*;
+
+    #[test]
+    fn every_terminal_result_spends_the_process_attempt() {
+        let failures = [NativeVideoRepairFailure::StartFailed, NativeVideoRepairFailure::HbcUnavailable,
+            NativeVideoRepairFailure::NotRoot, NativeVideoRepairFailure::CommandFailed,
+            NativeVideoRepairFailure::Timeout, NativeVideoRepairFailure::Unreadable,
+            NativeVideoRepairFailure::Unsupported];
+        for failure in failures {
+            let mut owner = NativeVideoRepairAttempt::new();
+            let token = owner.begin(true).unwrap();
+            assert!(owner.complete(token, Err(failure)));
+            assert_eq!(owner.begin(true), None);
+        }
+        let mut owner = NativeVideoRepairAttempt::new();
+        let token = owner.begin(true).unwrap();
+        assert!(owner.complete(token, Ok(())));
+        assert_eq!(owner.state(), NativeVideoRepairState::Repaired);
+        assert_eq!(owner.begin(true), None);
+    }
+
+    #[test]
+    fn unsupported_devices_and_duplicate_or_stale_receipts_fail_closed() {
+        let mut owner = NativeVideoRepairAttempt::new();
+        assert_eq!(owner.begin(false), None);
+        assert_eq!(owner.state(), NativeVideoRepairState::Failed(NativeVideoRepairFailure::Unsupported));
+        assert_eq!(owner.begin(true), None);
+        let mut owner = NativeVideoRepairAttempt::new();
+        assert!(!owner.complete(1, Ok(())));
+        let token = owner.begin(true).unwrap();
+        assert!(!owner.complete(token + 1, Ok(())));
+        assert!(owner.complete(token, Ok(())));
+        assert!(!owner.complete(token, Err(NativeVideoRepairFailure::Timeout)));
+    }
+}
