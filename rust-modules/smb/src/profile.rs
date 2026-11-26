@@ -137,6 +137,17 @@ impl ConnectionProfile {
         String::from_utf8(bytes).ok()
     }
 
+    /// Convert connection metadata to the neutral profile model. Secret credential envelopes
+    /// intentionally remain in the SMB adapter and are never exposed to core/UI consumers.
+    pub fn to_core_profile(&self, id: impl Into<String>, name: impl Into<String>) -> ntsmb_core::UserProfile {
+        ntsmb_core::UserProfile {
+            id: id.into(),
+            name: name.into(),
+            source_id: Some(format!("{}:{}:{}", self.host, self.port, self.share.as_deref().unwrap_or(""))),
+            username: (!self.guest).then(|| self.username.clone()),
+            is_guest: self.guest,
+        }
+    }
     /// Remove a saved credential envelope without affecting the connection metadata.
     pub fn clear_password(&mut self) {
         self.credential = None;
