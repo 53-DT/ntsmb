@@ -87,7 +87,7 @@ pub fn prepare_playback(mut session: Session, path: &str) -> Result<PreparedPlay
             .then_some([probe.width, probe.height]),
     };
 
-    let file_name = path.rsplit(|ch| ch == '/' || ch == '\\\\').find(|part| !part.is_empty()).unwrap_or(path).to_owned();
+    let file_name = path.rsplit(|ch| ch == '/' || ch == '\\').find(|part| !part.is_empty()).unwrap_or(path).to_owned();
     let source = ntsmb_core::PlaybackSource {
         source_id: "smb".to_owned(),
         uri: bridge.url().to_owned(),
