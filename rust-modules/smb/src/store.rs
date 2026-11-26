@@ -698,6 +698,68 @@ mod tests {
     }
 
     #[test]
+    fn legacy_session_is_imported_only_when_no_standalone_store_exists() {
+        let dir = scratch("legacy-session-import");
+        let file = dir.join("smb-connections.json");
+        let profile = ConnectionProfile::new("legacy-nas", 445, "alice", false).unwrap();
+        let mut legacy_store = SavedStore::open(Vec::new());
+        let legacy_id = legacy_store.upsert(profile.clone()).unwrap();
+        legacy_store.set_last_path(&legacy_id, "Movies");
+        let encoded = legacy_store.encode_session().unwrap();
+
+        let mut imported = SavedStore::open_with_legacy_session(
+            vec![file.clone()], None, Some(&encoded));
+        assert_eq!(imported.connections().len(), 1);
+        assert_eq!(imported.get(&legacy_id).unwrap().last_path, "Movies");
+        imported.save().unwrap();
+
+        let reopened = SavedStore::open_with_legacy_session(
+            vec![file.clone()], None, None);
+        assert_eq!(reopened.connections().len(), 1);
+        assert_eq!(reopened.last_used().unwrap().id, legacy_id);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn existing_standalone_store_takes_precedence_over_legacy_session() {
+        let dir = scratch("standalone-precedence");
+        let file = dir.join("smb-connections.json");
+        let mut standalone = SavedStore::open(vec![file.clone()]);
+        let standalone_id = standalone.upsert(
+            ConnectionProfile::new("standalone-nas", 445, "alice", false).unwrap()).unwrap();
+        standalone.save().unwrap();
+
+        let mut legacy = SavedStore::open(Vec::new());
+        legacy.upsert(ConnectionProfile::new("old-session-nas", 445, "bob", false).unwrap()).unwrap();
+        let encoded = legacy.encode_session().unwrap();
+
+        let reopened = SavedStore::open_with_legacy_session(
+            vec![file.clone()], None, Some(&encoded));
+        assert_eq!(reopened.connections().len(), 1);
+        assert!(reopened.get(&standalone_id).is_some());
+        assert!(reopened.connections().iter().all(|entry| entry.profile.host != "old-session-nas"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn corrupt_standalone_store_is_quarantined_without_resurrecting_legacy_data() {
+        let dir = scratch("corrupt-standalone-no-resurrection");
+        let file = dir.join("smb-connections.json");
+        fs::write(&file, "{ broken json").unwrap();
+
+        let mut legacy = SavedStore::open(Vec::new());
+        legacy.upsert(ConnectionProfile::new("old-session-nas", 445, "bob", false).unwrap()).unwrap();
+        let encoded = legacy.encode_session().unwrap();
+
+        let reopened = SavedStore::open_with_legacy_session(
+            vec![file.clone()], None, Some(&encoded));
+        assert!(reopened.connections().is_empty());
+        assert!(!file.exists());
+        assert!(dir.join("smb-connections.json.corrupt").exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn a_full_store_refuses_a_seventeenth_server() {
         let dir = scratch("full");
         let mut store = SavedStore::open(vec![dir.join("f.json")]);
