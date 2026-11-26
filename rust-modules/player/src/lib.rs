@@ -91,12 +91,15 @@ impl PlayerController {
 
     /// Accept a readout from the engine. Duration is optional until probing completes.
     pub fn report_position(&mut self, position_ms: u64, duration_ms: Option<u64>) {
+        // Ignore late engine readouts after the session has been cleared. The adapter may receive
+        // a final asynchronous notification while native teardown is completing.
+        if self.source.is_none() || self.snapshot.status == PlayerStatus::Empty { return; }
         self.snapshot.duration_ms = duration_ms;
         self.snapshot.position_ms = duration_ms.map_or(position_ms, |duration| position_ms.min(duration));
     }
 
     pub fn report_paused(&mut self) {
-        if self.snapshot.status == PlayerStatus::Playing {
+        if self.source.is_some() && self.snapshot.status == PlayerStatus::Playing {
             self.snapshot.status = PlayerStatus::Paused;
         }
     }
@@ -108,6 +111,7 @@ impl PlayerController {
     }
 
     pub fn report_finished(&mut self) {
+        if self.source.is_none() || self.snapshot.status == PlayerStatus::Empty { return; }
         self.snapshot.status = PlayerStatus::Stopped;
         if let Some(duration) = self.snapshot.duration_ms {
             self.snapshot.position_ms = duration;
@@ -115,6 +119,7 @@ impl PlayerController {
     }
 
     pub fn report_error(&mut self, message: impl Into<String>) {
+        if self.source.is_none() || self.snapshot.status == PlayerStatus::Empty { return; }
         self.snapshot.status = PlayerStatus::Failed;
         self.snapshot.error = Some(message.into());
     }
@@ -177,6 +182,22 @@ mod tests {
         assert_eq!(player.play(), None);
         assert_eq!(player.seek_to(100), None);
         assert_eq!(player.snapshot().error.as_deref(), Some("decoder unavailable"));
+    }
+
+    #[test]
+    fn late_engine_reports_cannot_resurrect_a_cleared_session() {
+        let mut player = PlayerController::new();
+        player.load(source());
+        player.report_position(5_000, Some(10_000));
+        player.clear();
+
+        player.report_position(9_000, Some(10_000));
+        player.report_paused();
+        player.report_finished();
+        player.report_error("late teardown error");
+
+        assert_eq!(player.snapshot(), &PlayerSnapshot::default());
+        assert!(player.source().is_none());
     }
 
     #[test]
