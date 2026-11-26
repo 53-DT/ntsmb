@@ -310,3 +310,6 @@ pub mod progress;
 
 /// Bounded opaque thumbnail storage; image decoding and fetching remain adapter-owned.
 pub mod thumbnail_cache;
+
+/// Stable identity-based focus save/restore helpers for screen adapters.
+pub mod selection;
