@@ -607,7 +607,6 @@ impl PlayerScreen {
     /// too) sees the same answer the frame draws.
     pub fn hud_up(&self, ps: &plx_media::route::PlaybackSession, now: u32) -> bool {
         self.hud.visible(ps, now, self.model.paused)
-            && !self.hud.sections.contains(Section::Info)
             && self.hud_policy != HudPolicy::Hidden
     }
 
@@ -2126,7 +2125,10 @@ impl PlayerScreen {
 
     /// Is the transport's MIDDLE (the scrubber and the control row) on screen? Not while a modal section holds it.
     fn middle_up(&self) -> bool {
-        !(self.hud.sections.any() && self.modal())
+        // Info owns the middle of the player surface even for an inline HUD package:
+        // do not leave the filename, scrubber or control row visible behind its panel.
+        !self.hud.sections.contains(Section::Info)
+            && !(self.hud.sections.any() && self.modal())
     }
 
     /// Where the strip's cards sit in screen space, as the Shelf's frame.
