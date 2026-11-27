@@ -83,6 +83,23 @@ impl ThumbnailCache {
         self.used_bytes = 0;
     }
 
+    /// Keep only entries accepted by the predicate, releasing stale thumbnail bytes.
+    /// The relative LRU order of retained entries is preserved.
+    pub fn retain(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        let mut used_bytes = 0usize;
+        self.entries.retain(|key, bytes| {
+            if keep(key) {
+                used_bytes = used_bytes.saturating_add(bytes.len());
+                true
+            } else {
+                false
+            }
+        });
+        let entries = &self.entries;
+        self.recency.retain(|key| entries.contains_key(key));
+        self.used_bytes = used_bytes;
+    }
+
     fn promote(&mut self, key: &str) {
         self.recency.retain(|candidate| candidate != key);
         self.recency.push_back(key.to_owned());
@@ -165,5 +182,29 @@ mod tests {
         cache.clear();
         assert!(cache.is_empty());
         assert_eq!(cache.used_bytes(), 0);
+    }
+
+    #[test]
+    fn retain_prunes_stale_entries_and_preserves_lru_order() {
+        let mut cache = ThumbnailCache::new(10);
+        assert!(cache.insert("film/a", vec![1, 2]));
+        assert!(cache.insert("film/stale", vec![3, 4, 5]));
+        assert!(cache.insert("film/b", vec![6, 7]));
+        assert!(cache.insert("other/c", vec![8, 9]));
+        assert_eq!(cache.get("film/a"), Some(&[1, 2][..]));
+
+        cache.retain(|key| key != "film/stale" && key.starts_with("film/"));
+
+        assert_eq!(cache.len(), 2);
+        assert_eq!(cache.used_bytes(), 4);
+        assert!(cache.get("film/a").is_some());
+        assert!(cache.get("film/b").is_some());
+        assert!(cache.get("film/stale").is_none());
+        assert!(cache.get("other/c").is_none());
+
+        assert!(cache.insert("film/c", vec![10, 11, 12, 13, 14, 15, 16]));
+        assert!(cache.get("film/a").is_none(), "a was the oldest retained entry");
+        assert!(cache.get("film/b").is_some(), "b retained its newer LRU position");
+        assert_eq!(cache.used_bytes(), 9);
     }
 }
