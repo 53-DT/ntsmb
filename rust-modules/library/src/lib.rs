@@ -1,7 +1,9 @@
 //! Backend-neutral library module exports for NTSMB.
 
 mod browser;
-pub use browser::{LibraryBrowser, LibraryIntent, LibrarySort, MediaFilter};
+mod listing;
+pub use browser::{LibraryBrowser, LibraryIntent};
+pub use listing::{LibrarySort, MediaFilter};
 
 #[cfg(test)]
 use ntsmb_core::{MediaFolder, MediaItem, MediaType};

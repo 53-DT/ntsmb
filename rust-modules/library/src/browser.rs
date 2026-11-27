@@ -6,36 +6,7 @@
 
 use std::collections::HashMap;
 use ntsmb_core::{MediaFolder, MediaId, MediaItem, MediaType, PlaybackState};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum LibrarySort {
-    #[default]
-    Name,
-    NameDescending,
-    TypeThenName,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum MediaFilter {
-    #[default]
-    All,
-    Folders,
-    Video,
-    Audio,
-    Images,
-}
-
-impl MediaFilter {
-    fn matches(self, item: &MediaItem) -> bool {
-        match self {
-            Self::All => true,
-            Self::Folders => item.is_directory,
-            Self::Video => !item.is_directory && item.media_type == MediaType::Video,
-            Self::Audio => !item.is_directory && item.media_type == MediaType::Audio,
-            Self::Images => !item.is_directory && item.media_type == MediaType::Image,
-        }
-    }
-}
+use crate::{LibrarySort, MediaFilter};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LibraryIntent {
@@ -130,24 +101,7 @@ impl LibraryBrowser {
     /// Visible rows follow the active filter/search and deterministic sort policy.
     pub fn visible_items(&self) -> Vec<&MediaItem> {
         let Some(folder) = self.folder.as_ref() else { return Vec::new(); };
-        let needle = self.query.trim().to_lowercase();
-        let mut rows: Vec<&MediaItem> = folder.items.iter()
-            .filter(|item| self.filter.matches(item))
-            .filter(|item| needle.is_empty() || item.name.to_lowercase().contains(&needle))
-            .collect();
-        rows.sort_by(|a, b| {
-            let folders_first = b.is_directory.cmp(&a.is_directory);
-            match self.sort {
-                LibrarySort::Name => folders_first.then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-                    .then_with(|| a.name.cmp(&b.name)),
-                LibrarySort::NameDescending => folders_first.then_with(|| b.name.to_lowercase().cmp(&a.name.to_lowercase()))
-                    .then_with(|| b.name.cmp(&a.name)),
-                LibrarySort::TypeThenName => folders_first.then_with(|| (a.media_type as u8).cmp(&(b.media_type as u8)))
-                    .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-                    .then_with(|| a.name.cmp(&b.name)),
-            }
-        });
-        rows
+        crate::listing::visible_items(folder, &self.query, self.filter, self.sort)
     }
 
     pub fn selected_item(&self) -> Option<&MediaItem> {
