@@ -87,6 +87,40 @@ mod tests {
     }
 
     #[test]
+    fn paused_and_failed_sessions_keep_their_last_valid_resume_position() {
+        let paused = PlayerSnapshot {
+            status: PlayerStatus::Paused,
+            position_ms: 42_000,
+            duration_ms: Some(100_000),
+            error: None,
+        }.to_playback_state("paused-film").unwrap();
+        assert_eq!(paused.position_ms, 42_000);
+        assert!(!paused.completed);
+
+        // A playback error should not erase a useful position already reported by the engine.
+        let failed = PlayerSnapshot {
+            status: PlayerStatus::Failed,
+            position_ms: 73_000,
+            duration_ms: Some(100_000),
+            error: Some("decoder stopped".into()),
+        }.to_playback_state("interrupted-film").unwrap();
+        assert_eq!(failed.position_ms, 73_000);
+        assert!(!failed.completed);
+    }
+
+    #[test]
+    fn resume_conversion_clamps_positions_beyond_duration() {
+        let state = PlayerSnapshot {
+            status: PlayerStatus::Playing,
+            position_ms: 150_000,
+            duration_ms: Some(100_000),
+            error: None,
+        }.to_playback_state("film").unwrap();
+        assert_eq!(state.position_ms, 100_000);
+        assert!(!state.completed, "only a finished session is marked complete");
+    }
+
+    #[test]
     fn unknown_duration_and_unstarted_sessions_are_not_persisted() {
         assert!(PlayerSnapshot::default().to_playback_state("movie").is_none());
         let ready = PlayerSnapshot { status: PlayerStatus::Ready, position_ms: 0,
