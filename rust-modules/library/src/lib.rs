@@ -399,3 +399,50 @@ mod selection_policy_tests {
         assert_ne!(browser.selected_item().map(|item| item.id.as_str()), Some("b"));
     }
 }
+
+
+#[cfg(test)]
+mod refresh_removed_selection_tests {
+    use super::*;
+
+    fn media(id: &str, name: &str, media_type: MediaType) -> MediaItem {
+        MediaItem {
+            id: id.into(),
+            name: name.into(),
+            path: name.into(),
+            size_bytes: None,
+            is_directory: false,
+            media_type,
+        }
+    }
+
+    #[test]
+    fn refreshing_when_focused_item_disappears_clamps_to_a_valid_row() {
+        let mut browser = LibraryBrowser::default();
+        browser.set_folder(MediaFolder {
+            source_id: "smb".into(),
+            path: "Films".into(),
+            parent_path: None,
+            items: vec![
+                media("a", "Alpha.mkv", MediaType::Video),
+                media("b", "Bravo.mkv", MediaType::Video),
+                media("c", "Charlie.mkv", MediaType::Video),
+            ],
+        });
+        browser.select_media_id("c");
+        assert_eq!(browser.selected_item().map(|item| item.id.as_str()), Some("c"));
+
+        browser.set_folder(MediaFolder {
+            source_id: "smb".into(),
+            path: "Films".into(),
+            parent_path: None,
+            items: vec![
+                media("a", "Alpha.mkv", MediaType::Video),
+                media("b", "Bravo.mkv", MediaType::Video),
+            ],
+        });
+
+        assert_eq!(browser.selected(), 1);
+        assert_eq!(browser.selected_item().map(|item| item.id.as_str()), Some("b"));
+    }
+}
