@@ -297,6 +297,23 @@ mod tests {
     }
 
     #[test]
+    fn progress_percent_handles_missing_and_zero_duration_and_boundaries() {
+        let mut browser = LibraryBrowser::default();
+        browser.set_progress(PlaybackState { media_id: "unknown".into(), position_ms: 50,
+            duration_ms: None, completed: false });
+        assert_eq!(browser.progress_percent("unknown"), None);
+        browser.set_progress(PlaybackState { media_id: "zero".into(), position_ms: 50,
+            duration_ms: Some(0), completed: false });
+        assert_eq!(browser.progress_percent("zero"), None);
+        browser.set_progress(PlaybackState { media_id: "start".into(), position_ms: 0,
+            duration_ms: Some(100), completed: false });
+        assert_eq!(browser.progress_percent("start"), Some(0));
+        browser.set_progress(PlaybackState { media_id: "middle".into(), position_ms: 55,
+            duration_ms: Some(100), completed: false });
+        assert_eq!(browser.progress_percent("middle"), Some(55));
+    }
+
+    #[test]
     fn progress_is_keyed_by_media_identity_and_clamped() {
         let mut browser = LibraryBrowser::default();
         browser.set_progress(PlaybackState { media_id: "film".into(), position_ms: 120,
