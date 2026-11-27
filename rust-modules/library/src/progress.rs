@@ -12,7 +12,11 @@ pub fn restore_progress<R: PlaybackStateRepository>(
     let mut loaded = Vec::new();
     for media_id in media_ids {
         if let Some(state) = repository.load_state(media_id)? {
-            loaded.push(state);
+            // A repository must return the record requested. Ignore malformed or mismatched
+            // records so they cannot inject progress under an unrelated media identity.
+            if state.media_id == *media_id {
+                loaded.push(state);
+            }
         }
     }
     // Replace the requested IDs as one logical snapshot. Missing records clear stale in-memory
@@ -127,6 +131,26 @@ mod tests {
             Err("read only".into()));
         assert_eq!(browser.progress_for("film"), before.as_ref(),
             "a failed delete must retain the in-memory state so it can be retried");
+    }
+
+    #[derive(Default)]
+    struct MismatchedRecord;
+
+    impl PlaybackStateRepository for MismatchedRecord {
+        fn load_state(&self, _: &str) -> Result<Option<PlaybackState>, String> {
+            Ok(Some(state("other-film", 900)))
+        }
+        fn save_state(&self, _: &PlaybackState) -> Result<(), String> { Ok(()) }
+        fn delete_state(&self, _: &str) -> Result<(), String> { Ok(()) }
+    }
+
+    #[test]
+    fn restore_ignores_records_with_mismatched_media_identity() {
+        let mut browser = LibraryBrowser::default();
+        restore_progress(&mut browser, &MismatchedRecord, &["film".into()]).unwrap();
+        assert!(browser.progress_for("film").is_none());
+        assert!(browser.progress_for("other-film").is_none(),
+            "a repository mismatch must not insert progress for another media item");
     }
 
     #[test]
