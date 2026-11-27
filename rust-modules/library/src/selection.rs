@@ -29,7 +29,7 @@ impl LibraryBrowser {
         let Some(index) = self.visible_items().iter().position(|item| item.id == media_id) else {
             return false;
         };
-        self.selected = index;
+        self.select_index(index);
         true
     }
 }
