@@ -26,6 +26,17 @@ impl ThumbnailCache {
     }
 
     pub fn max_bytes(&self) -> usize { self.max_bytes }
+
+    /// Change the memory budget immediately, evicting least-recently-used entries if needed.
+    pub fn set_max_bytes(&mut self, max_bytes: usize) {
+        self.max_bytes = max_bytes;
+        while self.used_bytes > self.max_bytes {
+            let Some(oldest) = self.recency.pop_front() else { break; };
+            if let Some(removed) = self.entries.remove(&oldest) {
+                self.used_bytes = self.used_bytes.saturating_sub(removed.len());
+            }
+        }
+    }
     pub fn used_bytes(&self) -> usize { self.used_bytes }
     pub fn len(&self) -> usize { self.entries.len() }
     pub fn is_empty(&self) -> bool { self.entries.is_empty() }
@@ -117,6 +128,33 @@ mod tests {
         assert!(!cache.insert("too-large", vec![0; 5]));
         assert!(cache.get("keep").is_some());
         assert_eq!(cache.used_bytes(), 2);
+    }
+ 
+    #[test]
+    fn shrinking_budget_evicts_lru_entries_and_keeps_accounting_valid() {
+        let mut cache = ThumbnailCache::new(10);
+        assert!(cache.insert("a", vec![1, 2, 3]));
+        assert!(cache.insert("b", vec![4, 5, 6]));
+        assert!(cache.insert("c", vec![7, 8, 9]));
+        assert_eq!(cache.get("a"), Some(&[1, 2, 3][..]));
+
+        cache.set_max_bytes(5);
+
+        assert_eq!(cache.max_bytes(), 5);
+        assert!(cache.get("a").is_some(), "recently used a should remain");
+        assert!(cache.get("b").is_none(), "least recently used b should be evicted first");
+        assert!(cache.get("c").is_none(), "c is evicted to satisfy the new budget");
+        assert_eq!(cache.used_bytes(), 3);
+        assert!(cache.used_bytes() <= cache.max_bytes());
+    }
+
+    #[test]
+    fn increasing_budget_does_not_discard_cached_entries() {
+        let mut cache = ThumbnailCache::new(3);
+        assert!(cache.insert("a", vec![1, 2, 3]));
+        cache.set_max_bytes(8);
+        assert_eq!(cache.get("a"), Some(&[1, 2, 3][..]));
+        assert_eq!(cache.used_bytes(), 3);
     }
 
     #[test]
