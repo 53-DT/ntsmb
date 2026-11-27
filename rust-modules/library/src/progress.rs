@@ -1,6 +1,39 @@
-//! Persistence bridge for the backend-neutral library's watch progress.
-use ntsmb_core::{MediaId, PlaybackStateRepository};
+//! Persistence bridge and in-memory state for the backend-neutral library's watch progress.
+use ntsmb_core::{MediaId, PlaybackState, PlaybackStateRepository};
+use std::collections::HashMap;
 use crate::LibraryBrowser;
+
+/// In-memory progress snapshot keyed by stable media identity.
+#[derive(Debug, Clone, Default)]
+pub struct ProgressStore {
+    states: HashMap<MediaId, PlaybackState>,
+}
+
+impl ProgressStore {
+    /// Insert or replace the state for its media identity.
+    pub fn set(&mut self, state: PlaybackState) {
+        self.states.insert(state.media_id.clone(), state);
+    }
+
+    /// Borrow the saved state for one media identity.
+    pub fn get(&self, media_id: &str) -> Option<&PlaybackState> {
+        self.states.get(media_id)
+    }
+
+    /// Remove one media identity from the in-memory snapshot.
+    pub fn clear(&mut self, media_id: &str) {
+        self.states.remove(media_id);
+    }
+
+    /// Return a clamped whole-number completion percentage when duration is known and nonzero.
+    pub fn percent(&self, media_id: &str) -> Option<u8> {
+        let state = self.states.get(media_id)?;
+        if state.completed { return Some(100); }
+        let duration = state.duration_ms?;
+        if duration == 0 { return None; }
+        Some(((state.position_ms.min(duration) as u128 * 100) / duration as u128) as u8)
+    }
+}
 
 /// Load a group of saved progress records into the library view model.
 /// The browser is updated only after every requested repository read succeeds.

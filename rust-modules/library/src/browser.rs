@@ -4,8 +4,7 @@
 //! thumbnail decoding and UI navigation are effects owned by adapters; this module derives
 //! visible rows and emits typed intents for the caller.
 
-use std::collections::HashMap;
-use ntsmb_core::{MediaFolder, MediaId, MediaItem, MediaType, PlaybackState};
+use ntsmb_core::{MediaFolder, MediaItem, MediaType, PlaybackState};
 use crate::{LibrarySort, MediaFilter};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,7 +22,7 @@ pub struct LibraryBrowser {
     filter: MediaFilter,
     sort: LibrarySort,
     selected: usize,
-    progress: HashMap<MediaId, PlaybackState>,
+    progress: crate::progress::ProgressStore,
 }
 
 impl LibraryBrowser {
@@ -136,9 +135,9 @@ impl LibraryBrowser {
         Some(LibraryIntent::OpenFolder { source_id: folder.source_id.clone(), path })
     }
 
-    /// Attach persisted progress supplied by a PlaybackStateRepository adapter.
+    /// Attach progress supplied by the library's progress store/repository adapter.
     pub fn set_progress(&mut self, state: PlaybackState) {
-        self.progress.insert(state.media_id.clone(), state);
+        self.progress.set(state);
     }
 
     pub fn progress_for(&self, media_id: &str) -> Option<&PlaybackState> {
@@ -146,15 +145,11 @@ impl LibraryBrowser {
     }
 
     pub fn clear_progress(&mut self, media_id: &str) {
-        self.progress.remove(media_id);
+        self.progress.clear(media_id);
     }
 
     pub fn progress_percent(&self, media_id: &str) -> Option<u8> {
-        let state = self.progress.get(media_id)?;
-        if state.completed { return Some(100); }
-        let duration = state.duration_ms?;
-        if duration == 0 { return None; }
-        Some(((state.position_ms.min(duration) as u128 * 100) / duration as u128) as u8)
+        self.progress.percent(media_id)
     }
 }
 
