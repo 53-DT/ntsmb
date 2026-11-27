@@ -30,9 +30,9 @@ impl MediaFilter {
         match self {
             Self::All => true,
             Self::Folders => item.is_directory,
-            Self::Video => item.media_type == MediaType::Video,
-            Self::Audio => item.media_type == MediaType::Audio,
-            Self::Images => item.media_type == MediaType::Image,
+            Self::Video => !item.is_directory && item.media_type == MediaType::Video,
+            Self::Audio => !item.is_directory && item.media_type == MediaType::Audio,
+            Self::Images => !item.is_directory && item.media_type == MediaType::Image,
         }
     }
 }
@@ -249,6 +249,21 @@ mod tests {
         browser.clear_query();
         browser.set_filter(MediaFilter::Video);
         assert_eq!(browser.visible_items().len(), 2);
+    }
+
+    #[test]
+    fn media_filters_exclude_directories_even_if_their_type_is_misclassified() {
+        let mut browser = LibraryBrowser::default();
+        let mut listing = folder("Films/Drama");
+        listing.items.push(item("Mislabelled folder", "Films/Drama/Folder", true, MediaType::Video));
+        listing.items.push(item("Mislabelled audio folder", "Films/Drama/AudioDir", true, MediaType::Audio));
+        browser.set_folder(listing);
+        browser.set_filter(MediaFilter::Video);
+        assert!(browser.visible_items().iter().all(|item| !item.is_directory));
+        browser.set_filter(MediaFilter::Audio);
+        assert!(browser.visible_items().iter().all(|item| !item.is_directory));
+        browser.set_filter(MediaFilter::Images);
+        assert!(browser.visible_items().iter().all(|item| !item.is_directory));
     }
 
     #[test]
